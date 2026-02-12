@@ -118,6 +118,28 @@
   found
 )
 
+;; pil:get-all-attrib-tags - Returns list of attribute tags in a block
+(defun pil:get-all-attrib-tags (ent / enx sub lst)
+  (setq enx (entget ent))
+  (if (and (= (cdr (assoc 0 enx)) "INSERT")
+           (= (cdr (assoc 66 enx)) 1))
+    (progn
+      (setq sub (entnext ent))
+      (while sub
+        (setq enx (entget sub))
+        (if (= (cdr (assoc 0 enx)) "ATTRIB")
+          (setq lst (cons (cdr (assoc 2 enx)) lst))
+        )
+        (if (= (cdr (assoc 0 enx)) "SEQEND")
+          (setq sub nil)
+          (setq sub (entnext sub))
+        )
+      )
+      (reverse lst)
+    )
+  )
+)
+
 ;; pil:find-tag-attrib - Busca un atributo por tag en cualquier entidad
 ;; ent: entidad (puede ser INSERT, ATTRIB, o cualquier otra)
 ;; tagname: nombre del tag a buscar (string)
@@ -1407,6 +1429,19 @@
           )
           ((= what_next 2) (setq what_next curtab))   ;; Reabrir mismo tab
           ((= what_next 20)                           ;; Examinar bloque
+           (if (setq ent (car (entsel "\nSeleccione un bloque de referencia: ")))
+             (if (= (cdr (assoc 0 (entget ent))) "INSERT")
+               (if (setq attlst (pil:get-all-attrib-tags ent))
+                 (setq blkname (cdr (assoc 2 (entget ent)))
+                       atidx   0
+                       scl     (cdr (assoc 41 (entget ent)))
+                       rot     (cdr (assoc 50 (entget ent)))
+                 )
+                 (alert "El bloque seleccionado no tiene atributos.")
+               )
+               (alert "La entidad seleccionada no es un bloque.")
+             )
+           ) 
            (setq what_next curtab)
           )
           ((and (>= what_next 11) (<= what_next 14))  ;; Cambiar de pestana
@@ -1427,20 +1462,21 @@
     (cond
       ;; ---- EJECUTAR ATRIBUTO (Tab 1) ----
       ((= curtab 1)
-       (setq pilotes (pil:select-entities "Seleccione los pilotes a numerar:" 4 tag))
-       (if pilotes
+       (if (and blkname (/= blkname "") attlst)
          (progn
-           (setq count (length pilotes)
-                 pad   (pil:get-padding count)
-                 i     (atoi val)
+           (setq old_attreq (getvar "ATTREQ"))
+           (setvar "ATTREQ" 0)
+           (setq tag (nth atidx attlst))
+           ;; Bucle de insercion
+           (while (setq pt (getpoint "\nEspecifique punto de insercion: "))
+             (command "_.-insert" blkname pt scl scl (angtos rot))
+             (setq ent (entlast))
+             (pil:update-ent-val ent (strcat pref val sep suff) tag)
+             (setq val (pil:incsuff val inc typ))
            )
-           (foreach ent pilotes
-             (pil:update-ent-val ent (strcat pref sep (pil:pad-number i pad) suff) tag)
-             (setq i (+ i inc))
-           )
-           (princ (strcat "\n" (itoa count) " pilotes numerados."))
+           (setvar "ATTREQ" old_attreq)
          )
-         (princ "\nNo se seleccionaron bloques con el atributo especificado.")
+         (alert "Configure primero el bloque y el atributo.")
        )
       )
 
