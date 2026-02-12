@@ -121,7 +121,7 @@
 ;; pil:find-tag-attrib - Busca un atributo por tag en cualquier entidad
 ;; ent: entidad (puede ser INSERT, ATTRIB, o cualquier otra)
 ;; tagname: nombre del tag a buscar (string)
-;; Retorna: entget del atributo encontrado, o nil
+;; Retorna: ename del atributo encontrado, o nil
 (defun pil:find-tag-attrib (ent tagname / enx sub found)
   (setq enx (entget ent))
   (cond
@@ -135,7 +135,7 @@
          ((= (cdr (assoc 0 enx)) "SEQEND") (setq sub nil))
          ((and (= (cdr (assoc 0 enx)) "ATTRIB")
                (= (strcase (cdr (assoc 2 enx))) (strcase tagname)))
-          (setq found enx)
+          (setq found sub)
          )
          (T (setq sub (entnext sub)))
        )
@@ -145,7 +145,7 @@
     ;; Si es un ATTRIB directamente y coincide el tag
     ((and (= (cdr (assoc 0 enx)) "ATTRIB")
           (= (strcase (cdr (assoc 2 enx))) (strcase tagname)))
-     enx
+     ent
     )
     ;; Cualquier otra cosa: nil
     (T nil)
@@ -195,14 +195,34 @@
 ;; ent: entidad INSERT del bloque
 ;; val: nuevo valor (string)
 ;; Retorna: T si tuvo exito, nil si no
-(defun pil:set-nm-value (ent val / att elst)
-  (if (setq att (pil:get-nm-attrib ent))
-    (progn
-      (setq elst (entget att))
-      (entmod (subst (cons 1 val) (assoc 1 elst) elst))
-      (entupd ent)
-      T
+;; pil:update-ent-val - Actualiza el valor de una entidad (Bloque/Text/MText)
+;; ent: entidad
+;; val: nuevo valor (string)
+;; tag: etiqueta (para bloques)
+;; etypes: mascara tipos (para validacion extra, opcional)
+;; Retorna: T si tuvo exito
+(defun pil:update-ent-val (ent val tag / typ elst att)
+  (setq elst (entget ent)
+        typ  (cdr (assoc 0 elst)))
+  (cond
+    ;; Bloque: buscar atributo por tag
+    ((= typ "INSERT")
+     (if (setq att (pil:find-tag-attrib ent tag))
+       (progn
+         (setq elst (entget att))
+         (entmod (subst (cons 1 val) (assoc 1 elst) elst))
+         (entupd ent)
+         T
+       )
+     )
     )
+    ;; Texto o MTexto: actualizar grupo 1
+    ((or (= typ "TEXT") (= typ "MTEXT"))
+     (entmod (subst (cons 1 val) (assoc 1 elst) elst))
+     (entupd ent)
+     T
+    )
+    (T nil)
   )
 )
 
@@ -270,15 +290,30 @@
 ;; pil:select-pilotes - Solicita seleccion de pilotes y filtra por atributo NM
 ;; msg: mensaje para el usuario
 ;; Retorna: lista de entidades INSERT que tienen atributo NM
-(defun pil:select-pilotes (msg / ss i ent lst)
+;; pil:select-entities - Solicita seleccion y filtra por tipos
+;; msg: mensaje
+;; etypes: mascara (1=TEXT, 2=MTEXT, 4=INSERT)
+;; tag: etiqueta para filtrar bloques
+(defun pil:select-entities (msg etypes tag / ss i ent lst filter typ)
   (princ (strcat "\n" msg))
-  (if (setq ss (ssget '((0 . "INSERT") (66 . 1))))
+  (setq filter "")
+  (if (= 1 (logand 1 etypes)) (setq filter (strcat filter "TEXT,")))
+  (if (= 2 (logand 2 etypes)) (setq filter (strcat filter "MTEXT,")))
+  (if (= 4 (logand 4 etypes)) (setq filter (strcat filter "INSERT,")))
+  (if (> (strlen filter) 0)
+    (setq filter (substr filter 1 (1- (strlen filter))))
+  )
+  (if (setq ss (ssget (list (cons 0 filter))))
     (progn
       (setq i 0)
       (repeat (sslength ss)
         (setq ent (ssname ss i))
-        (if (pil:get-nm-attrib ent)
-          (setq lst (cons ent lst))
+        (setq typ (cdr (assoc 0 (entget ent))))
+        (cond
+          ((= typ "INSERT")
+           (if (pil:find-tag-attrib ent tag) (setq lst (cons ent lst)))
+          )
+          (T (setq lst (cons ent lst)))
         )
         (setq i (1+ i))
       )
@@ -390,7 +425,7 @@
   (vl-file-delete temp)
   (if val
     (progn
-      (setq pilotes (pil:select-pilotes "Seleccione los pilotes a numerar:"))
+      (setq pilotes (pil:select-entities "Seleccione los pilotes a numerar:" 4 *PIL:TAG*))
       (if pilotes
         (progn
           (setq count (length pilotes)
@@ -398,7 +433,7 @@
                 i     (atoi val)
           )
           (foreach ent pilotes
-            (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+            (pil:update-ent-val ent (strcat pref (pil:pad-number i pad) suff) *PIL:TAG*)
             (setq i (+ i inc))
           )
           (princ (strcat "\n" (itoa count) " pilotes numerados correctamente."))
@@ -474,7 +509,7 @@
   (vl-file-delete temp)
   (if val
     (progn
-      (setq pilotes (pil:select-pilotes "Seleccione los pilotes a renumerar:"))
+      (setq pilotes (pil:select-entities "Seleccione los pilotes a renumerar:" 4 *PIL:TAG*))
       (if pilotes
         (progn
           ;; Ordenar segun el modo seleccionado
@@ -490,7 +525,7 @@
                 i     (atoi val)
           )
           (foreach ent pilotes
-            (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+            (pil:update-ent-val ent (strcat pref (pil:pad-number i pad) suff) *PIL:TAG*)
             (setq i (+ i inc))
           )
           (princ (strcat "\n" (itoa count) " pilotes renumerados correctamente."))
@@ -1314,6 +1349,13 @@
           ;; ---- PESTANA 4: AUTO ----
           ((= curtab 4)
            (set_tile "atag" tag)
+           (mode_tile "atag" (if (= 4 (logand 4 sel_etypes)) 0 1))
+           ;; Inicializar radio buttons de tipo de entidad
+           (cond
+             ((= sel_etypes 1) (set_tile "aet_txt" "1"))
+             ((= sel_etypes 2) (set_tile "aet_mtxt" "1"))
+             (T (set_tile "aet_blk" "1"))
+           )
            (start_list "sort1")
            (mapcar 'add_list sortlst)
            (end_list)
@@ -1322,7 +1364,17 @@
            (end_list)
            (set_tile "sort1" (itoa auto_sort1))
            (set_tile "sort2" (itoa auto_sort2))
+           ;; Inicializar radio buttons de accion
+           (cond
+             ((= sel_action "pre") (set_tile "aact_pre" "1"))
+             ((= sel_action "suf") (set_tile "aact_suf" "1"))
+             (T (set_tile "aact_sub" "1"))
+           )
+           ;; Action tiles
            (action_tile "atag" "(setq tag $value)")
+           (action_tile "aet_txt"  "(setq sel_etypes 1) (mode_tile \"atag\" 1)")
+           (action_tile "aet_mtxt" "(setq sel_etypes 2) (mode_tile \"atag\" 1)")
+           (action_tile "aet_blk"  "(setq sel_etypes 4) (mode_tile \"atag\" 0)")
            (action_tile "sort1" "(setq auto_sort1 (atoi $value))")
            (action_tile "sort2" "(setq auto_sort2 (atoi $value))")
            (action_tile "aact_pre" "(setq sel_action \"pre\")")
@@ -1375,7 +1427,7 @@
     (cond
       ;; ---- EJECUTAR ATRIBUTO (Tab 1) ----
       ((= curtab 1)
-       (setq pilotes (pil:select-pilotes "Seleccione los pilotes a numerar:"))
+       (setq pilotes (pil:select-entities "Seleccione los pilotes a numerar:" 4 tag))
        (if pilotes
          (progn
            (setq count (length pilotes)
@@ -1383,12 +1435,12 @@
                  i     (atoi val)
            )
            (foreach ent pilotes
-             (pil:set-nm-value ent (strcat pref sep (pil:pad-number i pad) suff))
+             (pil:update-ent-val ent (strcat pref sep (pil:pad-number i pad) suff) tag)
              (setq i (+ i inc))
            )
            (princ (strcat "\n" (itoa count) " pilotes numerados."))
          )
-         (princ "\nNo se seleccionaron pilotes con atributo NM.")
+         (princ "\nNo se seleccionaron bloques con el atributo especificado.")
        )
       )
 
@@ -1457,8 +1509,8 @@
 
       ;; ---- EJECUTAR AUTO (Tab 4) ----
       ((= curtab 4)
-       (setq pilotes (pil:select-pilotes
-                       "Seleccione los pilotes a renumerar:"))
+       (setq pilotes (pil:select-entities
+                       "Seleccione los elementos a renumerar:" sel_etypes tag))
        (if pilotes
          (progn
            ;; Ordenar segun sort1
@@ -1478,7 +1530,14 @@
                  i     (atoi val)
            )
            (foreach ent pilotes
-             (pil:set-nm-value ent (strcat pref sep (pil:pad-number i pad) suff))
+             (setq newval (pil:apply-action
+                            (if (= (cdr (assoc 0 (entget ent))) "INSERT")
+                                (cdr (assoc 1 (entget (pil:find-tag-attrib ent tag))))
+                                (cdr (assoc 1 (entget ent)))
+                            )
+                            (strcat pref sep (pil:pad-number i pad) suff)
+                            sel_action))
+             (pil:update-ent-val ent newval tag)
              (setq i (+ i inc))
            )
            (princ (strcat "\n" (itoa count) " pilotes renumerados."))
