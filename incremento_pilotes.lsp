@@ -89,6 +89,35 @@
   str
 )
 
+;; pil:escape-block-name - Escapa nombres anonimos (*U###) para usar en -INSERT
+(defun pil:escape-block-name (name)
+  (if (and name (> (strlen name) 0) (= "*" (substr name 1 1)))
+    (strcat "`" name)
+    name
+  )
+)
+
+;; pil:get-insert-block-name - Devuelve nombre valido para insertar un bloque
+;; Para bloques dinamicos anonimos (*U###), intenta usar EffectiveName.
+(defun pil:get-insert-block-name (ent / enx obj name)
+  (setq enx (entget ent))
+  (if (= (cdr (assoc 0 enx)) "INSERT")
+    (progn
+      (setq name (cdr (assoc 2 enx)))
+      (if (and name (> (strlen name) 0) (= "*" (substr name 1 1)))
+        (progn
+          (vl-load-com)
+          (setq obj (vlax-ename->vla-object ent))
+          (if (vlax-property-available-p obj 'EffectiveName)
+            (setq name (vla-get-EffectiveName obj))
+          )
+        )
+      )
+      name
+    )
+  )
+)
+
 ;; pil:get-nm-attrib - Busca la entidad del atributo "NM" dentro de un INSERT
 ;; ent: entidad INSERT
 ;; Retorna: la entidad del atributo NM o nil
@@ -1214,7 +1243,7 @@
                    auto_sort1 auto_sort2 sortlst
                    blkname scl rot attlst atidx
                    pilotes count pad i ent elst pt hor vert nor
-                   newval save)
+                   newval save old_attreq)
 
   ;; Valores por defecto
   (setq typ   1            ;; Numeros
@@ -1432,7 +1461,7 @@
            (if (setq ent (car (entsel "\nSeleccione un bloque de referencia: ")))
              (if (= (cdr (assoc 0 (entget ent))) "INSERT")
                (if (setq attlst (pil:get-all-attrib-tags ent))
-                 (setq blkname (cdr (assoc 2 (entget ent)))
+                 (setq blkname (pil:get-insert-block-name ent)
                        atidx   0
                        scl     (cdr (assoc 41 (entget ent)))
                        rot     (cdr (assoc 50 (entget ent)))
@@ -1469,7 +1498,7 @@
            (setq tag (nth atidx attlst))
            ;; Bucle de insercion
            (while (setq pt (getpoint "\nEspecifique punto de insercion: "))
-             (command "_.-insert" blkname pt scl scl (angtos rot))
+             (command "_.-insert" (pil:escape-block-name blkname) pt scl scl (angtos rot))
              (setq ent (entlast))
              (pil:update-ent-val ent (strcat pref val sep suff) tag)
              (setq val (pil:incsuff val inc typ))
