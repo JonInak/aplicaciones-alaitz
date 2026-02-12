@@ -1,13 +1,13 @@
 ;|
-  INCREMENTO DE PILOTES para LusoCAD
+  INCREMETAR NUMERACION para LusoCAD
   ===================================
-  Script para numerar e incrementar atributos "NM" en bloques de pilotes.
-  Basado en las rutinas de Gile (Gilles Chanteau), adaptado para pilotes.
+  Script para numerar e incrementar atributos y textos.
+  Basado en las rutinas de Gile (Gilles Chanteau).
 
   Comandos disponibles:
     INCPIL    - Menu principal (elegir operacion)
-    NUMPIL    - Numerar pilotes secuencialmente
-    RENUMPIL  - Renumerar pilotes existentes por posicion
+    NUMPIL    - Numerar secuencialmente
+    RENUMPIL  - Renumerar existentes por posicion
     INCPILTXT - Insertar textos con valor incremental
     INCPILSUF - Incrementar sufijo de atributos NM
     INCPILADD - Anadir valor incremental a atributos NM
@@ -1119,7 +1119,7 @@
   ;; Tab 1: Atributo
   (write-line
     (strcat
-      "PilTab1:dialog{label=\"Incremento de Pilotes\";"
+      "PilTab1:dialog{label=\"Incremetar numeracion\";"
       ":row{"
       (pil:dcl-left-panel)
       ":column{"
@@ -1133,7 +1133,7 @@
   ;; Tab 2: Texto
   (write-line
     (strcat
-      "PilTab2:dialog{label=\"Incremento de Pilotes\";"
+      "PilTab2:dialog{label=\"Incremetar numeracion\";"
       ":row{"
       (pil:dcl-left-panel)
       ":column{"
@@ -1147,7 +1147,7 @@
   ;; Tab 3: Seleccion
   (write-line
     (strcat
-      "PilTab3:dialog{label=\"Incremento de Pilotes\";"
+      "PilTab3:dialog{label=\"Incremetar numeracion\";"
       ":row{"
       (pil:dcl-left-panel)
       ":column{"
@@ -1161,7 +1161,7 @@
   ;; Tab 4: Auto
   (write-line
     (strcat
-      "PilTab4:dialog{label=\"Incremento de Pilotes\";"
+      "PilTab4:dialog{label=\"Incremetar numeracion\";"
       ":row{"
       (pil:dcl-left-panel)
       ":column{"
