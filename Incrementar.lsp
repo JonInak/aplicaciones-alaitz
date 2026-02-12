@@ -1619,7 +1619,7 @@
 ;;=================== CARGA ===================;;
 
 (princ "\n==============================================")
-(princ "\n  INCREMENTO DE PILOTES v2.0 cargado.")
+(princ "\n  Incremento numeracion cargado.")
 (princ "\n  Comando principal: INCPIL")
 (princ "\n  Atajos: NUMPIL, RENUMPIL, INCPILTXT,")
 (princ "\n          INCPILSUF, INCPILADD, INCPILSEL")
