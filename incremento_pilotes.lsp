@@ -118,6 +118,79 @@
   found
 )
 
+;; pil:find-tag-attrib - Busca un atributo por tag en cualquier entidad
+;; ent: entidad (puede ser INSERT, ATTRIB, o cualquier otra)
+;; tagname: nombre del tag a buscar (string)
+;; Retorna: entget del atributo encontrado, o nil
+(defun pil:find-tag-attrib (ent tagname / enx sub found)
+  (setq enx (entget ent))
+  (cond
+    ;; Si es un INSERT (bloque), buscar entre sus atributos
+    ((and (= (cdr (assoc 0 enx)) "INSERT")
+          (= (cdr (assoc 66 enx)) 1))
+     (setq sub (entnext ent))
+     (while (and sub (not found))
+       (setq enx (entget sub))
+       (cond
+         ((= (cdr (assoc 0 enx)) "SEQEND") (setq sub nil))
+         ((and (= (cdr (assoc 0 enx)) "ATTRIB")
+               (= (strcase (cdr (assoc 2 enx))) (strcase tagname)))
+          (setq found enx)
+         )
+         (T (setq sub (entnext sub)))
+       )
+     )
+     found
+    )
+    ;; Si es un ATTRIB directamente y coincide el tag
+    ((and (= (cdr (assoc 0 enx)) "ATTRIB")
+          (= (strcase (cdr (assoc 2 enx))) (strcase tagname)))
+     enx
+    )
+    ;; Cualquier otra cosa: nil
+    (T nil)
+  )
+)
+
+;; pil:sel-pick - Selecciona una entidad y devuelve su entget segun tipos permitidos
+;; entname: nombre de entidad (ename)
+;; etypes: mascara de bits (1=TEXT, 2=MTEXT, 4=BLOCK)
+;; tag: etiqueta de atributo (para bloques)
+;; Retorna: entget del objetivo (TEXT, MTEXT, o ATTRIB dentro de bloque), o nil
+(defun pil:sel-pick (entname etypes tag / enx typ)
+  (setq enx (entget entname)
+        typ (cdr (assoc 0 enx)))
+  (cond
+    ((and (= typ "TEXT") (= 1 (logand 1 etypes))) enx)
+    ((and (= typ "MTEXT") (= 2 (logand 2 etypes))) enx)
+    ((and (= typ "INSERT") (= 4 (logand 4 etypes)))
+     (pil:find-tag-attrib entname tag))
+    (T nil)
+  )
+)
+
+;; pil:apply-action - Aplica la accion al texto existente
+;; existing: texto actual de la entidad (string)
+;; newval: nuevo valor compuesto (string)
+;; action: "sub" (sustituir), "pre" (anadir como prefijo), "suf" (anadir como sufijo)
+;; Retorna: texto final (string)
+(defun pil:apply-action (existing newval action)
+  (cond
+    ((= action "sub") newval)
+    ((= action "pre") (strcat newval existing))
+    ((= action "suf") (strcat existing newval))
+    (T newval)
+  )
+)
+
+;; pil:entupd-smart - Actualiza entidad en pantalla (ATTRIB vs TEXT/MTEXT)
+(defun pil:entupd-smart (elst)
+  (if (= (cdr (assoc 0 elst)) "ATTRIB")
+    (entupd (cdr (assoc 330 elst)))
+    (entupd (cdr (assoc -1 elst)))
+  )
+)
+
 ;; pil:set-nm-value - Establece el valor del atributo NM en un bloque
 ;; ent: entidad INSERT del bloque
 ;; val: nuevo valor (string)
@@ -215,12 +288,15 @@
 )
 
 ;; pil:incvalue - Bucle de seleccion e incremento (adaptado de gile)
-;; pref: prefijo, val: valor, suff: sufijo, inc: incremento
-;; bin: tipo (1=num, 2=MAY, 4=min), save: lista undo
-(defun pil:incvalue (pref val suff inc bin save / ent elst att newval)
+;; pref: prefijo, val: valor, sep: separador, suff: sufijo, inc: incremento
+;; bin: tipo (1=num, 2=MAY, 4=min), tag: etiqueta atributo
+;; etypes: mascara tipos entidad (1=TEXT, 2=MTEXT, 4=BLOCK)
+;; action: "sub"/"pre"/"suf", save: lista undo
+(defun pil:incvalue (pref val sep suff inc bin tag etypes action save
+                     / ent elst newval)
   (while (or (initget 1 "Deshacer")
-             (setq ent (nentsel
-                         (strcat "\nSeleccione el siguiente pilote"
+             (setq ent (entsel
+                         (strcat "\nSeleccione el siguiente elemento"
                                  (if save " o [Deshacer]: " ": ")
                          )
                        )
@@ -231,24 +307,25 @@
         (progn
           (setq elst (car save))
           (entmod elst)
-          (entupd (cdr (assoc 330 elst)))
+          (pil:entupd-smart elst)
           (setq val  (pil:incsuff val (- inc) bin)
                 save (cdr save)
           )
         )
         (princ "\nNada que deshacer.")
       )
-      (if (and (setq elst (entget (car ent)))
-               (= (cdr (assoc 0 elst)) "ATTRIB")
-               (= (strcase (cdr (assoc 2 elst))) (strcase *PIL:TAG*))
-          )
+      (if (setq elst (pil:sel-pick (car ent) etypes tag))
         (progn
           (setq save (cons elst save))
           (setq val (pil:incsuff val inc bin))
-          (entmod (subst (cons 1 (strcat pref val suff)) (assoc 1 elst) elst))
-          (entupd (cdr (assoc 330 elst)))
+          (setq newval (pil:apply-action
+                         (cdr (assoc 1 elst))
+                         (strcat pref val sep suff)
+                         action))
+          (entmod (subst (cons 1 newval) (assoc 1 elst) elst))
+          (pil:entupd-smart elst)
         )
-        (princ "\nEntidad no valida. Seleccione un atributo NM de un pilote.")
+        (princ "\nEntidad no valida o tipo no permitido.")
       )
     )
   )
@@ -663,7 +740,7 @@
         )
       )
       (if (pil:ValidSel elst)
-        (pil:incvalue "" val "" *pil:incrval* *pil:suffbin* save)
+        (pil:incvalue "" val "" "" *pil:incrval* *pil:suffbin* *PIL:TAG* 7 "sub" save)
         (princ "\nParametro de sufijo incorrecto.")
       )
     )
@@ -840,7 +917,7 @@
       )
       (entupd (cdr (assoc 330 elst)))
       ;; Continuar con el bucle de incremento
-      (pil:incvalue pref val suff inc 7 save)
+      (pil:incvalue pref val "" suff inc 7 *PIL:TAG* 7 "sub" save)
     )
   )
   (princ)
@@ -1080,7 +1157,7 @@
                    auto_sort1 auto_sort2 sortlst
                    blkname scl rot attlst atidx
                    pilotes count pad i ent elst pt hor vert nor
-                   save)
+                   newval save)
 
   ;; Valores por defecto
   (setq typ   1            ;; Numeros
@@ -1215,12 +1292,20 @@
            (if (= 2 (logand 2 sel_etypes)) (set_tile "et_mtxt" "1"))
            (if (= 4 (logand 4 sel_etypes)) (set_tile "et_blk" "1"))
            (set_tile "tag" tag)
+            (mode_tile "tag" (if (= 4 (logand 4 sel_etypes)) 0 1))
            (cond
              ((= sel_action "pre") (set_tile "act_pre" "1"))
              ((= sel_action "suf") (set_tile "act_suf" "1"))
              (T (set_tile "act_sub" "1"))
            )
            (action_tile "tag" "(setq tag $value)")
+           (action_tile "et_txt"
+             "(setq sel_etypes (if (= $value \"1\") (logior sel_etypes 1) (logand sel_etypes 6)))")
+           (action_tile "et_mtxt"
+             "(setq sel_etypes (if (= $value \"1\") (logior sel_etypes 2) (logand sel_etypes 5)))")
+           (action_tile "et_blk"
+             "(setq sel_etypes (if (= $value \"1\") (logior sel_etypes 4) (logand sel_etypes 3)))
+              (mode_tile \"tag\" (if (= $value \"1\") 0 1))")
            (action_tile "act_pre" "(setq sel_action \"pre\")")
            (action_tile "act_suf" "(setq sel_action \"suf\")")
            (action_tile "act_sub" "(setq sel_action \"sub\")")
@@ -1298,7 +1383,7 @@
                  i     (atoi val)
            )
            (foreach ent pilotes
-             (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+             (pil:set-nm-value ent (strcat pref sep (pil:pad-number i pad) suff))
              (setq i (+ i inc))
            )
            (princ (strcat "\n" (itoa count) " pilotes numerados."))
@@ -1336,7 +1421,7 @@
              (cons 11 pt)
              (cons 72 hor)
              (cons 73 vert)
-             (cons 1 (strcat pref val suff))
+             (cons 1 (strcat pref val sep suff))
              (cons 210 nor)
            )
          )
@@ -1346,21 +1431,28 @@
 
       ;; ---- EJECUTAR SELECCION (Tab 3) ----
       ((= curtab 3)
+       ;; Leer checkboxes de tipo de entidad del dialogo
+       ;; sel_etypes ya contiene la mascara de bits
+       ;; Seleccionar la primera entidad
        (while
          (not
            (and
-             (setq ent (nentsel "\nSeleccione el atributo NM de partida: "))
-             (setq elst (entget (car ent)))
-             (= (cdr (assoc 0 elst)) "ATTRIB")
-             (= (strcase (cdr (assoc 2 elst))) (strcase tag))
+             (setq ent (entsel "\nSeleccione el elemento de partida: "))
+             (setq elst (pil:sel-pick (car ent) sel_etypes tag))
            )
          )
+         (if ent (princ "\nEntidad no valida o tipo no permitido. Intente de nuevo."))
        )
+       ;; Aplicar accion al primer elemento
        (setq save (cons elst save))
-       (entmod (subst (cons 1 (strcat pref val suff))
-                      (assoc 1 elst) elst))
-       (entupd (cdr (assoc 330 elst)))
-       (pil:incvalue pref val suff inc typ save)
+       (setq newval (pil:apply-action
+                      (cdr (assoc 1 elst))
+                      (strcat pref val sep suff)
+                      sel_action))
+       (entmod (subst (cons 1 newval) (assoc 1 elst) elst))
+       (pil:entupd-smart elst)
+       ;; Continuar con el bucle de incremento
+       (pil:incvalue pref val sep suff inc typ tag sel_etypes sel_action save)
       )
 
       ;; ---- EJECUTAR AUTO (Tab 4) ----
@@ -1386,7 +1478,7 @@
                  i     (atoi val)
            )
            (foreach ent pilotes
-             (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+             (pil:set-nm-value ent (strcat pref sep (pil:pad-number i pad) suff))
              (setq i (+ i inc))
            )
            (princ (strcat "\n" (itoa count) " pilotes renumerados."))
