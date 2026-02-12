@@ -846,55 +846,565 @@
   (princ)
 )
 
-;;=================== COMANDO INCPIL ===================;;
-;; Menu principal - Permite elegir la operacion
+;;=================== COMANDO INCPIL (DIALOGO UNIFICADO CON PESTANAS) ===================;;
 
-(defun c:INCPIL (/ temp file dcl_id fun)
-  (setq temp (vl-filename-mktemp "IncPil.dcl")
-        file (open temp "w")
+;; pil:dcl-left-panel - Genera la cadena DCL del panel izquierdo (compartido)
+(defun pil:dcl-left-panel ()
+  (strcat
+    ":column{fixed_width=true;width=26;"
+    ":boxed_column{label=\"Tipo de valor\";"
+    ":toggle{label=\"Numeros [0-9]\";key=\"num\";}"
+    ":toggle{label=\"Mayusculas [A-Z]\";key=\"maj\";}"
+    ":toggle{label=\"Minusculas [a-z]\";key=\"min\";}"
+    "spacer;}"
+    ":boxed_column{label=\"Parametros\";"
+    ":edit_box{label=\"Valor inicial\";key=\"val\";edit_width=8;}"
+    ":edit_box{label=\"Incremento\";key=\"inc\";edit_width=8;}"
+    ":edit_box{label=\"Separador\";key=\"sep\";edit_width=8;}"
+    ":edit_box{label=\"Prefijo\";key=\"pref\";edit_width=8;}"
+    ":edit_box{label=\"Sufijo\";key=\"suff\";edit_width=8;}"
+    "}}"
   )
+)
+
+;; pil:dcl-tab-buttons - Genera la cadena DCL de los botones de pestana
+(defun pil:dcl-tab-buttons ()
+  (strcat
+    ":row{"
+    ":button{label=\"Atributo\";key=\"tab1\";width=10;fixed_width=true;}"
+    ":button{label=\"Texto\";key=\"tab2\";width=10;fixed_width=true;}"
+    ":button{label=\"Seleccion\";key=\"tab3\";width=10;fixed_width=true;}"
+    ":button{label=\"Auto\";key=\"tab4\";width=10;fixed_width=true;}"
+    "}"
+  )
+)
+
+;; pil:dcl-tab-atributo - Contenido de la pestana Atributo
+(defun pil:dcl-tab-atributo ()
+  (strcat
+    ":boxed_column{label=\"Bloque\";"
+    ":edit_box{label=\"Nombre del bloque\";key=\"blkname\";edit_width=16;}"
+    ":button{label=\"Examinar...\";key=\"browse\";alignment=right;fixed_width=true;}"
+    "spacer;"
+    ":edit_box{label=\"Escala global\";key=\"scl\";edit_width=8;}"
+    ":edit_box{label=\"Rotacion\";key=\"rot\";edit_width=8;}"
+    "}"
+    ":boxed_column{label=\"Atributo\";"
+    ":popup_list{label=\"Identificador\";key=\"attag\";edit_width=16;}"
+    "}"
+    ":boxed_column{label=\"Insercion\";"
+    ":radio_button{label=\"Punto por punto\";key=\"ins_pt\";value=\"1\";}"
+    "}"
+  )
+)
+
+;; pil:dcl-tab-texto - Contenido de la pestana Texto
+(defun pil:dcl-tab-texto ()
+  (strcat
+    ":boxed_column{label=\"Propiedades del texto\";"
+    ":popup_list{label=\"Estilo\";key=\"st\";edit_width=16;}"
+    ":popup_list{label=\"Justificacion\";key=\"ju\";edit_width=16;}"
+    ":edit_box{label=\"Altura\";key=\"ht\";edit_width=8;}"
+    ":edit_box{label=\"Rotacion\";key=\"tro\";edit_width=8;}"
+    "}"
+    ":boxed_column{label=\"Insercion\";"
+    ":radio_button{label=\"Punto por punto\";key=\"ins_pt\";value=\"1\";}"
+    "}"
+  )
+)
+
+;; pil:dcl-tab-seleccion - Contenido de la pestana Seleccion
+(defun pil:dcl-tab-seleccion ()
+  (strcat
+    ":boxed_column{label=\"Tipo de entidad\";"
+    ":toggle{label=\"Texto\";key=\"et_txt\";}"
+    ":toggle{label=\"Texto lineas multiples\";key=\"et_mtxt\";}"
+    ":toggle{label=\"Bloque\";key=\"et_blk\";}"
+    "}"
+    ":edit_box{label=\"Identificador\";key=\"tag\";edit_width=16;}"
+    ":boxed_column{label=\"Accion\";"
+    ":radio_button{label=\"Anadir como prefijo\";key=\"act_pre\";}"
+    ":radio_button{label=\"Anadir como sufijo\";key=\"act_suf\";}"
+    ":radio_button{label=\"Sustituir\";key=\"act_sub\";value=\"1\";}"
+    "}"
+  )
+)
+
+;; pil:dcl-tab-auto - Contenido de la pestana Auto
+(defun pil:dcl-tab-auto ()
+  (strcat
+    ":boxed_column{label=\"Tipo de entidad\";"
+    ":radio_button{label=\"Texto\";key=\"aet_txt\";}"
+    ":radio_button{label=\"Texto lineas multiples\";key=\"aet_mtxt\";}"
+    ":radio_button{label=\"Bloque\";key=\"aet_blk\";value=\"1\";}"
+    "}"
+    ":edit_box{label=\"Identificador\";key=\"atag\";edit_width=16;}"
+    ":boxed_column{label=\"Accion\";"
+    ":radio_button{label=\"Anadir como prefijo\";key=\"aact_pre\";}"
+    ":radio_button{label=\"Anadir como sufijo\";key=\"aact_suf\";}"
+    ":radio_button{label=\"Sustituir\";key=\"aact_sub\";value=\"1\";}"
+    "}"
+    ":boxed_column{label=\"Clasificacion\";"
+    ":popup_list{label=\"Ordenar por\";key=\"sort1\";edit_width=14;}"
+    ":popup_list{label=\"Entonces por\";key=\"sort2\";edit_width=14;}"
+    "}"
+  )
+)
+
+;; pil:write-all-dcl - Escribe las 4 definiciones de dialogo en el archivo DCL
+(defun pil:write-all-dcl (file)
+  ;; Tab 1: Atributo
   (write-line
     (strcat
-      "IncPil:dialog{label=\"Incremento de Pilotes\";"
-      ":radio_column{key=\"fun\";"
-      ":radio_button{"
-      "label=\"NUMPIL - Numerar pilotes secuencialmente\";key=\"c:NUMPIL\";}"
-      ":radio_button{"
-      "label=\"RENUMPIL - Renumerar por posicion\";key=\"c:RENUMPIL\";}"
-      ":radio_button{"
-      "label=\"INCPILTXT - Insertar textos incrementados\";key=\"c:INCPILTXT\";}"
-      ":radio_button{"
-      "label=\"INCPILSEL - Incrementar por seleccion\";key=\"c:INCPILSEL\";}"
-      ":radio_button{"
-      "label=\"INCPILSUF - Incrementar sufijo\";key=\"c:INCPILSUF\";}"
-      ":radio_button{"
-      "label=\"INCPILADD - Anadir valor incremental\";key=\"c:INCPILADD\";}}"
-      "ok_cancel;}"
+      "PilTab1:dialog{label=\"Incremento de Pilotes\";"
+      ":row{"
+      (pil:dcl-left-panel)
+      ":column{"
+      (pil:dcl-tab-buttons)
+      (pil:dcl-tab-atributo)
+      "}}"
+      "spacer;ok_cancel;}"
     )
     file
   )
+  ;; Tab 2: Texto
+  (write-line
+    (strcat
+      "PilTab2:dialog{label=\"Incremento de Pilotes\";"
+      ":row{"
+      (pil:dcl-left-panel)
+      ":column{"
+      (pil:dcl-tab-buttons)
+      (pil:dcl-tab-texto)
+      "}}"
+      "spacer;ok_cancel;}"
+    )
+    file
+  )
+  ;; Tab 3: Seleccion
+  (write-line
+    (strcat
+      "PilTab3:dialog{label=\"Incremento de Pilotes\";"
+      ":row{"
+      (pil:dcl-left-panel)
+      ":column{"
+      (pil:dcl-tab-buttons)
+      (pil:dcl-tab-seleccion)
+      "}}"
+      "spacer;ok_cancel;}"
+    )
+    file
+  )
+  ;; Tab 4: Auto
+  (write-line
+    (strcat
+      "PilTab4:dialog{label=\"Incremento de Pilotes\";"
+      ":row{"
+      (pil:dcl-left-panel)
+      ":column{"
+      (pil:dcl-tab-buttons)
+      (pil:dcl-tab-auto)
+      "}}"
+      "spacer;ok_cancel;}"
+    )
+    file
+  )
+)
+
+;; pil:setup-left-panel - Configura los tiles del panel izquierdo (compartido)
+(defun pil:setup-left-panel (typ val inc sep pref suff)
+  (if (= 1 (logand 1 typ)) (set_tile "num" "1"))
+  (if (= 2 (logand 2 typ)) (set_tile "maj" "1"))
+  (if (= 4 (logand 4 typ)) (set_tile "min" "1"))
+  (set_tile "val" val)
+  (set_tile "inc" (itoa inc))
+  (set_tile "sep" sep)
+  (set_tile "pref" pref)
+  (set_tile "suff" suff)
+)
+
+;; pil:setup-left-actions - Configura las acciones del panel izquierdo
+(defun pil:setup-left-actions ()
+  (action_tile "val" "(setq val $value)")
+  (action_tile "pref" "(setq pref $value)")
+  (action_tile "suff" "(setq suff $value)")
+  (action_tile "sep" "(setq sep $value)")
+  (action_tile
+    "inc"
+    "(if (and (numberp (read $value)) (< 0 (read $value)))
+       (setq inc (atoi $value))
+       (progn
+         (alert \"El incremento debe ser un entero positivo.\")
+         (set_tile \"inc\" (itoa inc))
+         (mode_tile \"inc\" 2)))"
+  )
+)
+
+;; pil:setup-tab-actions - Configura las acciones de los botones de pestana
+(defun pil:setup-tab-actions ()
+  (action_tile "tab1"
+    "(setq typ (+
+       (if (= (get_tile \"num\") \"1\") 1 0)
+       (if (= (get_tile \"maj\") \"1\") 2 0)
+       (if (= (get_tile \"min\") \"1\") 4 0)))
+     (done_dialog 11)"
+  )
+  (action_tile "tab2"
+    "(setq typ (+
+       (if (= (get_tile \"num\") \"1\") 1 0)
+       (if (= (get_tile \"maj\") \"1\") 2 0)
+       (if (= (get_tile \"min\") \"1\") 4 0)))
+     (done_dialog 12)"
+  )
+  (action_tile "tab3"
+    "(setq typ (+
+       (if (= (get_tile \"num\") \"1\") 1 0)
+       (if (= (get_tile \"maj\") \"1\") 2 0)
+       (if (= (get_tile \"min\") \"1\") 4 0)))
+     (done_dialog 13)"
+  )
+  (action_tile "tab4"
+    "(setq typ (+
+       (if (= (get_tile \"num\") \"1\") 1 0)
+       (if (= (get_tile \"maj\") \"1\") 2 0)
+       (if (= (get_tile \"min\") \"1\") 4 0)))
+     (done_dialog 14)"
+  )
+)
+
+;; c:INCPIL - Comando principal con dialogo unificado y pestanas
+(defun c:INCPIL (/ temp file dcl_id curtab what_next accepted
+                   typ val inc sep pref suff
+                   slst st jlst ju ht tro
+                   sel_action sel_etypes tag
+                   auto_sort1 auto_sort2 sortlst
+                   blkname scl rot attlst atidx
+                   pilotes count pad i ent elst pt hor vert nor
+                   save)
+
+  ;; Valores por defecto
+  (setq typ   1            ;; Numeros
+        val   "1"
+        inc   1
+        sep   ""
+        pref  ""
+        suff  ""
+        curtab 3           ;; Pestana Seleccion por defecto
+        accepted nil
+  )
+
+  ;; Recopilar estilos de texto
+  (setq slst nil)
+  (while (setq st (tblnext "STYLE" (not st)))
+    (if (/= (cdr (assoc 2 st)) "")
+      (setq slst (cons (cdr (assoc 2 st)) slst))
+    )
+  )
+  (setq slst (reverse slst))
+  (setq st (if slst (car slst) "Standard"))
+  (setq jlst '("Izquierdo"     "Centro"           "Derecha"
+               "Medio"         "Arriba Izquierda"  "Arriba Centro"
+               "Arriba Derecha" "Medio Izquierda"  "Medio Centro"
+               "Medio Derecha" "Abajo Izquierda"   "Abajo Centro"
+               "Abajo Derecha")
+  )
+  (setq ju "Izquierdo")
+  (setq ht (getvar "TEXTSIZE"))
+  (setq tro 0.0)
+  (setq sortlst '("X Ascendente" "X Descendente" "Y Ascendente" "Y Descendente"))
+  (setq auto_sort1 0 auto_sort2 2)
+  (setq sel_action "sub" sel_etypes 4 tag *PIL:TAG*)
+  (setq blkname "" scl 1.0 rot 0.0 atidx 0)
+
+  ;; Generar archivo DCL con las 4 pestanas
+  (setq temp (vl-filename-mktemp "IncPil.dcl")
+        file (open temp "w")
+  )
+  (pil:write-all-dcl file)
   (close file)
   (setq dcl_id (load_dialog temp))
-  (if (not (new_dialog "IncPil" dcl_id))
-    (exit)
-  )
-  (set_tile "c:NUMPIL" "1")
-  (action_tile
-    "accept"
-    "(setq fun (get_tile \"fun\")) (done_dialog)"
-  )
-  (start_dialog)
+  (setq what_next curtab)
+
+  ;; === BUCLE PRINCIPAL DE PESTANAS ===
+  (while (> what_next 0)
+    (if (not (new_dialog
+               (strcat "PilTab" (itoa curtab))
+               dcl_id))
+      (progn (alert "Error cargando el dialogo.") (setq what_next 0))
+    )
+    (if (> what_next 0)
+      (progn
+        ;; Configurar panel izquierdo (compartido)
+        (pil:setup-left-panel typ val inc sep pref suff)
+        (pil:setup-left-actions)
+        (pil:setup-tab-actions)
+
+        ;; Configurar contenido segun la pestana actual
+        (cond
+          ;; ---- PESTANA 1: ATRIBUTO ----
+          ((= curtab 1)
+           (set_tile "blkname" blkname)
+           (set_tile "scl" (rtos scl))
+           (set_tile "rot" (rtos rot))
+           (if attlst
+             (progn
+               (start_list "attag")
+               (mapcar 'add_list attlst)
+               (end_list)
+               (set_tile "attag" (itoa atidx))
+             )
+           )
+           (action_tile "blkname" "(setq blkname $value)")
+           (action_tile "scl"
+             "(if (and (distof $value) (< 0 (distof $value)))
+                (setq scl (distof $value))
+                (progn (alert \"Requiere un numero positivo\")
+                       (set_tile \"scl\" (rtos scl))
+                       (mode_tile \"scl\" 2)))"
+           )
+           (action_tile "rot"
+             "(if (numberp (angtof $value))
+                (setq rot (angtof $value))
+                (progn (alert \"Requiere un angulo valido\")
+                       (set_tile \"rot\" (rtos rot))
+                       (mode_tile \"rot\" 2)))"
+           )
+           (action_tile "attag" "(setq atidx (atoi $value))")
+           (action_tile "browse" "(done_dialog 20)")
+          )
+
+          ;; ---- PESTANA 2: TEXTO ----
+          ((= curtab 2)
+           (if slst
+             (progn
+               (start_list "st")
+               (mapcar 'add_list slst)
+               (end_list)
+               (set_tile "st" (itoa (if (vl-position st slst)
+                                      (vl-position st slst) 0)))
+             )
+           )
+           (start_list "ju")
+           (mapcar 'add_list jlst)
+           (end_list)
+           (set_tile "ju" (itoa (if (vl-position ju jlst)
+                                  (vl-position ju jlst) 0)))
+           (set_tile "ht" (rtos ht))
+           (set_tile "tro" (angtos tro))
+           (action_tile "st" "(setq st (nth (atoi $value) slst))")
+           (action_tile "ju" "(setq ju (nth (atoi $value) jlst))")
+           (action_tile "ht"
+             "(if (and (numberp (distof $value)) (< 0 (distof $value)))
+                (setq ht (distof $value))
+                (progn (alert \"Requiere un numero positivo\")
+                       (set_tile \"ht\" (rtos ht))
+                       (mode_tile \"ht\" 2)))"
+           )
+           (action_tile "tro"
+             "(if (numberp (angtof $value))
+                (setq tro (angtof $value))
+                (progn (alert \"Requiere un angulo valido\")
+                       (set_tile \"tro\" (angtos tro))
+                       (mode_tile \"tro\" 2)))"
+           )
+          )
+
+          ;; ---- PESTANA 3: SELECCION ----
+          ((= curtab 3)
+           (if (= 1 (logand 1 sel_etypes)) (set_tile "et_txt" "1"))
+           (if (= 2 (logand 2 sel_etypes)) (set_tile "et_mtxt" "1"))
+           (if (= 4 (logand 4 sel_etypes)) (set_tile "et_blk" "1"))
+           (set_tile "tag" tag)
+           (cond
+             ((= sel_action "pre") (set_tile "act_pre" "1"))
+             ((= sel_action "suf") (set_tile "act_suf" "1"))
+             (T (set_tile "act_sub" "1"))
+           )
+           (action_tile "tag" "(setq tag $value)")
+           (action_tile "act_pre" "(setq sel_action \"pre\")")
+           (action_tile "act_suf" "(setq sel_action \"suf\")")
+           (action_tile "act_sub" "(setq sel_action \"sub\")")
+          )
+
+          ;; ---- PESTANA 4: AUTO ----
+          ((= curtab 4)
+           (set_tile "atag" tag)
+           (start_list "sort1")
+           (mapcar 'add_list sortlst)
+           (end_list)
+           (start_list "sort2")
+           (mapcar 'add_list sortlst)
+           (end_list)
+           (set_tile "sort1" (itoa auto_sort1))
+           (set_tile "sort2" (itoa auto_sort2))
+           (action_tile "atag" "(setq tag $value)")
+           (action_tile "sort1" "(setq auto_sort1 (atoi $value))")
+           (action_tile "sort2" "(setq auto_sort2 (atoi $value))")
+           (action_tile "aact_pre" "(setq sel_action \"pre\")")
+           (action_tile "aact_suf" "(setq sel_action \"suf\")")
+           (action_tile "aact_sub" "(setq sel_action \"sub\")")
+          )
+        ) ;; end cond
+
+        ;; Accion OK: guardar estado del panel izquierdo
+        (action_tile "accept"
+          "(setq typ (+
+             (if (= (get_tile \"num\") \"1\") 1 0)
+             (if (= (get_tile \"maj\") \"1\") 2 0)
+             (if (= (get_tile \"min\") \"1\") 4 0)))
+           (if (zerop typ)
+             (progn (alert \"Seleccione al menos un tipo de valor.\")
+                    (setq typ 1) (done_dialog 2))
+             (done_dialog 1))"
+        )
+        (action_tile "cancel" "(done_dialog 0)")
+
+        ;; Iniciar dialogo
+        (setq what_next (start_dialog))
+
+        ;; Procesar resultado
+        (cond
+          ((= what_next 0) (setq what_next 0))       ;; Cancelar - sale del bucle
+          ((= what_next 1)                            ;; OK - marcar aceptado y salir
+           (setq accepted T what_next 0)
+          )
+          ((= what_next 2) (setq what_next curtab))   ;; Reabrir mismo tab
+          ((= what_next 20)                           ;; Examinar bloque
+           (setq what_next curtab)
+          )
+          ((and (>= what_next 11) (<= what_next 14))  ;; Cambiar de pestana
+           (setq curtab (- what_next 10)
+                 what_next curtab
+           )
+          )
+        )
+      )
+    )
+  ) ;; end while
+
   (unload_dialog dcl_id)
   (vl-file-delete temp)
-  (and fun (apply (read fun) nil))
+
+  ;; === EJECUCION SEGUN PESTANA ACTIVA ===
+  (if accepted
+    (cond
+      ;; ---- EJECUTAR ATRIBUTO (Tab 1) ----
+      ((= curtab 1)
+       (setq pilotes (pil:select-pilotes "Seleccione los pilotes a numerar:"))
+       (if pilotes
+         (progn
+           (setq count (length pilotes)
+                 pad   (pil:get-padding count)
+                 i     (atoi val)
+           )
+           (foreach ent pilotes
+             (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+             (setq i (+ i inc))
+           )
+           (princ (strcat "\n" (itoa count) " pilotes numerados."))
+         )
+         (princ "\nNo se seleccionaron pilotes con atributo NM.")
+       )
+      )
+
+      ;; ---- EJECUTAR TEXTO (Tab 2) ----
+      ((= curtab 2)
+       (setq hor  (cond
+                    ((wcmatch ju "*Izquierda,Izquierdo") 0)
+                    ((wcmatch ju "*Centro") 1)
+                    ((wcmatch ju "*Derecha") 2)
+                    (T 4)
+                  )
+             vert (cond
+                    ((wcmatch ju "Arriba *") 3)
+                    ((wcmatch ju "Medio *") 2)
+                    ((wcmatch ju "Abajo *") 1)
+                    (T 0)
+                  )
+             nor  (trans '(0 0 1) 1 0 T)
+       )
+       (while (setq pt (getpoint "\nEspecifique punto de insercion: "))
+         (setq pt (trans pt 1 nor))
+         (entmake
+           (list
+             '(0 . "TEXT")
+             (cons 10 pt)
+             (cons 40 ht)
+             (cons 50 (+ tro (angle '(0 0 0)
+                         (trans (getvar "UCSXDIR") 0 nor))))
+             (cons 7 st)
+             (cons 11 pt)
+             (cons 72 hor)
+             (cons 73 vert)
+             (cons 1 (strcat pref val suff))
+             (cons 210 nor)
+           )
+         )
+         (setq val (pil:incsuff val inc typ))
+       )
+      )
+
+      ;; ---- EJECUTAR SELECCION (Tab 3) ----
+      ((= curtab 3)
+       (while
+         (not
+           (and
+             (setq ent (nentsel "\nSeleccione el atributo NM de partida: "))
+             (setq elst (entget (car ent)))
+             (= (cdr (assoc 0 elst)) "ATTRIB")
+             (= (strcase (cdr (assoc 2 elst))) (strcase tag))
+           )
+         )
+       )
+       (setq save (cons elst save))
+       (entmod (subst (cons 1 (strcat pref val suff))
+                      (assoc 1 elst) elst))
+       (entupd (cdr (assoc 330 elst)))
+       (pil:incvalue pref val suff inc typ save)
+      )
+
+      ;; ---- EJECUTAR AUTO (Tab 4) ----
+      ((= curtab 4)
+       (setq pilotes (pil:select-pilotes
+                       "Seleccione los pilotes a renumerar:"))
+       (if pilotes
+         (progn
+           ;; Ordenar segun sort1
+           (setq pilotes
+             (cond
+               ((= auto_sort1 0) (pil:sort-ents-by-x pilotes))  ;; X asc
+               ((= auto_sort1 1)                                ;; X desc
+                (reverse (pil:sort-ents-by-x pilotes)))
+               ((= auto_sort1 2) (pil:sort-ents-by-y pilotes))  ;; Y asc
+               ((= auto_sort1 3)                                ;; Y desc
+                (reverse (pil:sort-ents-by-y pilotes)))
+               (T pilotes)
+             )
+           )
+           (setq count (length pilotes)
+                 pad   (pil:get-padding count)
+                 i     (atoi val)
+           )
+           (foreach ent pilotes
+             (pil:set-nm-value ent (strcat pref (pil:pad-number i pad) suff))
+             (setq i (+ i inc))
+           )
+           (princ (strcat "\n" (itoa count) " pilotes renumerados."))
+         )
+         (princ "\nNo se seleccionaron pilotes con atributo NM.")
+       )
+      )
+    ) ;; end cond
+  ) ;; end if
+
   (princ)
 )
 
 ;;=================== CARGA ===================;;
 
-(princ "\n======================================")
-(princ "\n  INCREMENTO DE PILOTES cargado.")
-(princ "\n  Comandos: INCPIL, NUMPIL, RENUMPIL,")
-(princ "\n  INCPILTXT, INCPILSUF, INCPILADD, INCPILSEL")
-(princ "\n======================================")
-(princ)
+(princ "\n==============================================")
+(princ "\n  INCREMENTO DE PILOTES v2.0 cargado.")
+(princ "\n  Comando principal: INCPIL")
+(princ "\n  Atajos: NUMPIL, RENUMPIL, INCPILTXT,")
+(princ "\n          INCPILSUF, INCPILADD, INCPILSEL")
+(princ "\n==============================================")(princ)
