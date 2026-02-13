@@ -1,0 +1,535 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guía de Usuario - Incrementar Numeración v2.0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f3f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f7fbff;
+      --ink: #10213a;
+      --muted: #5f7088;
+      --line: #d7e2ee;
+      --brand: #0f6ecb;
+      --brand-strong: #0a4e90;
+      --accent: #fb8c00;
+      --ok: #0f9d68;
+      --shadow: 0 12px 30px rgba(13, 39, 80, 0.08);
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      min-height: 100%;
+    }
+
+    body {
+      font-family: "Manrope", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 0% 0%, #d9ecff 0%, rgba(217, 236, 255, 0) 44%),
+        radial-gradient(circle at 100% 0%, #e8f8ef 0%, rgba(232, 248, 239, 0) 42%),
+        var(--bg);
+      line-height: 1.65;
+      padding: 28px 18px 44px;
+    }
+
+    .shell {
+      max-width: 1220px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+    }
+
+    .toc {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      height: fit-content;
+      position: sticky;
+      top: 18px;
+    }
+
+    .toc h2 {
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--brand-strong);
+      margin-bottom: 10px;
+    }
+
+    .toc ol {
+      list-style: none;
+      display: grid;
+      gap: 6px;
+      padding-left: 0;
+    }
+
+    .toc a {
+      display: block;
+      text-decoration: none;
+      color: var(--muted);
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      font-size: 0.94rem;
+      transition: 0.18s ease;
+    }
+
+    .toc a:hover {
+      color: var(--brand-strong);
+      border-color: #c9ddf3;
+      background: #f4f9ff;
+    }
+
+    .doc {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero {
+      background:
+        linear-gradient(120deg, #0f6ecb 0%, #0a4e90 62%, #0b3e71 100%);
+      color: #ffffff;
+      padding: 36px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .hero .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+      padding: 6px 12px;
+      margin-bottom: 14px;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.8rem, 2.3vw, 2.6rem);
+      line-height: 1.15;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+
+    .hero p {
+      color: rgba(255, 255, 255, 0.88);
+      max-width: 70ch;
+      font-size: 1.02rem;
+    }
+
+    .content {
+      padding: 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    section {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+      padding: 20px;
+    }
+
+    h2 {
+      font-size: 1.34rem;
+      line-height: 1.25;
+      margin-bottom: 12px;
+      color: var(--brand-strong);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h2::before {
+      content: "";
+      width: 5px;
+      height: 22px;
+      border-radius: 4px;
+      background: linear-gradient(180deg, var(--accent) 0%, #ffbc63 100%);
+      display: inline-block;
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin: 16px 0 8px;
+      color: var(--brand);
+      letter-spacing: 0.02em;
+    }
+
+    p {
+      margin-bottom: 11px;
+      color: #223852;
+    }
+
+    ul, ol {
+      margin: 0 0 12px 20px;
+    }
+
+    li {
+      margin-bottom: 7px;
+    }
+
+    code, .command {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.93em;
+    }
+
+    .command {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: #0f2038;
+      color: #eaf4ff;
+      border-left: 4px solid var(--accent);
+      border-radius: 10px;
+      padding: 9px 14px;
+      margin: 8px 0 12px;
+      font-weight: 600;
+      box-shadow: 0 8px 20px rgba(8, 24, 46, 0.28);
+    }
+
+    .callout {
+      border-radius: 10px;
+      padding: 12px 14px;
+      border: 1px solid;
+      margin-top: 12px;
+      margin-bottom: 8px;
+    }
+
+    .callout.info {
+      background: #eef6ff;
+      border-color: #b9d9ff;
+      color: #194976;
+    }
+
+    .callout.warn {
+      background: #fff7ea;
+      border-color: #ffd596;
+      color: #7b4a00;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--panel-soft);
+      padding: 14px;
+    }
+
+    .card h4 {
+      font-size: 0.94rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--brand-strong);
+      margin-bottom: 6px;
+    }
+
+    .steps {
+      list-style: none;
+      margin-left: 0;
+      counter-reset: step;
+    }
+
+    .steps li {
+      position: relative;
+      padding-left: 34px;
+      margin-bottom: 9px;
+    }
+
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #fff;
+      text-align: center;
+      line-height: 22px;
+      font-weight: 700;
+      font-size: 0.78rem;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      padding-top: 8px;
+      font-size: 0.9rem;
+    }
+
+    .break {
+      border: 0;
+      border-top: 1px dashed #c5d5e6;
+      margin: 4px 0;
+    }
+
+    @media (max-width: 1024px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: static;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .hero {
+        padding: 24px;
+      }
+
+      .content {
+        padding: 14px;
+      }
+
+      .cards {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+
+      .shell {
+        display: block;
+      }
+
+      .toc {
+        display: none;
+      }
+
+      .doc {
+        border: 0;
+        box-shadow: none;
+      }
+
+      section {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="toc">
+      <h2>Contenido</h2>
+      <ol>
+        <li><a href="#intro">1. Introducción</a></li>
+        <li><a href="#instalacion">2. Instalación rápida</a></li>
+        <li><a href="#principal">3. Comando principal</a></li>
+        <li><a href="#herramientas">4. Las 4 herramientas</a></li>
+        <li><a href="#atajos">5. Atajos directos</a></li>
+        <li><a href="#compat">Compatibilidad</a></li>
+        <li><a href="#panel">6. Panel izquierdo</a></li>
+        <li><a href="#atributo">7. Pestaña Atributo</a></li>
+        <li><a href="#texto">8. Pestaña Texto</a></li>
+        <li><a href="#seleccion">9. Pestaña Selección</a></li>
+        <li><a href="#auto">10. Pestaña Auto</a></li>
+      </ol>
+    </aside>
+
+    <main class="doc">
+      <header class="hero">
+        <span class="tag">LusoCAD / AutoCAD · v2.0</span>
+        <h1>Guía de Usuario: Incrementar Numeración</h1>
+        <p>Manual práctico para insertar, editar y renumerar bloques/textos de forma secuencial con el comando <strong>INCREMENTAR</strong>.</p>
+      </header>
+
+      <div class="content">
+        <section id="intro">
+          <h2>1. Introducción</h2>
+          <p>Esta herramienta automatiza la numeración secuencial de elementos en planos. Tanto para insertar nuevos pilotes con atributos como para renombrar textos ya existentes por su posición en el dibujo.</p>
+          <p>El objetivo es reducir errores manuales y acelerar tareas repetitivas de numeración.</p>
+        </section>
+
+        <section id="instalacion">
+          <h2>2. Instalación rápida</h2>
+          <ol>
+            <li>Escribe <strong>APPLOAD</strong> en la consola de AutoCAD/LusoCAD.</li>
+            <li>Selecciona <strong>Incrementar.lsp</strong> y pulsa <strong>Cargar</strong>.</li>
+            <li>Verifica el mensaje: <strong>"Incremento numeracion cargado."</strong></li>
+          </ol>
+        </section>
+
+        <section id="principal">
+          <h2>3. Comando principal</h2>
+          <p>Para abrir el panel de control unificado:</p>
+          <div class="command">INCREMENTAR</div>
+          <p>Se abre un diálogo con 4 pestañas. El panel izquierdo controla formato global: tipo de valor, valor inicial, incremento, separador, prefijo y sufijo.</p>
+          <div class="callout info">
+            Si necesitas una secuencia con ceros iniciales (01, 02, 03...), escribe <strong>01</strong> en <strong>Valor inicial</strong>.
+          </div>
+        </section>
+
+        <section id="herramientas">
+          <h2>4. Las 4 herramientas</h2>
+          <div class="cards">
+            <article class="card">
+              <h4>Atributo</h4>
+              <p>Inserta bloques nuevos uno a uno y escribe el valor incremental en un atributo elegido.</p>
+            </article>
+            <article class="card">
+              <h4>Texto</h4>
+              <p>Inserta textos nuevos en puntos de dibujo con incremento automático.</p>
+            </article>
+            <article class="card">
+              <h4>Selección</h4>
+              <p>Renumera entidades existentes en el orden en que las vas seleccionando.</p>
+            </article>
+            <article class="card">
+              <h4>Auto</h4>
+              <p>Renumeración masiva ordenada por criterio geométrico (X/Y ascendente o descendente).</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="atajos">
+          <h2>5. Atajos directos</h2>
+          <ul>
+            <li><strong>NUMERAR</strong>: inserción secuencial de bloques.</li>
+            <li><strong>RENUMERAR</strong>: renumeración automática por posición.</li>
+            <li><strong>INSERTARTEXTO</strong>: inserción secuencial de textos.</li>
+            <li><strong>INCREMENTARSUFIJO</strong>: incremento de sufijo en atributos.</li>
+            <li><strong>ANADIRVALOR</strong>: añade valor incremental a atributo.</li>
+            <li><strong>INCREMENTARSELECCION</strong>: incremento sobre selección manual.</li>
+          </ul>
+        </section>
+
+        <section id="compat">
+          <h2>Compatibilidad</h2>
+          <p>El script es compatible con bloques dinámicos y bloques anónimos. Cuando procede, detecta y usa el nombre efectivo del bloque para evitar errores al insertar.</p>
+          <div class="callout warn">
+            Recomendación: trabajar siempre con un bloque de referencia válido mediante <strong>Examinar...</strong> antes de ejecutar la pestaña <strong>Atributo</strong>.
+          </div>
+        </section>
+
+        <hr class="break">
+
+        <section id="panel">
+          <h2>6. Detalle del panel izquierdo</h2>
+          <p>Este panel define <strong>cómo</strong> crece la secuencia y se comparte en todas las pestañas.</p>
+          <ul>
+            <li><strong>Tipo de valor</strong>: números, mayúsculas y minúsculas.</li>
+            <li><strong>Valor inicial</strong>: punto de arranque de la secuencia.</li>
+            <li><strong>Incremento</strong>: paso de avance (1, 2, 5...).</li>
+            <li><strong>Separador / Prefijo / Sufijo</strong>: texto fijo adicional en cada valor.</li>
+          </ul>
+          <p>Ejemplo: Prefijo <code>P-</code> y valor inicial <code>01</code> produce <code>P-01</code>, <code>P-02</code>...</p>
+        </section>
+
+        <section id="atributo">
+          <h2>7. Pestaña: Atributo</h2>
+          <h3>Bloque</h3>
+          <ul>
+            <li><strong>Nombre del bloque</strong>: nombre interno a insertar.</li>
+            <li><strong>Examinar...</strong>: recomienda seleccionar un bloque ya existente para autocompletar datos.</li>
+            <li><strong>Escala / Rotación</strong>: parámetros de inserción del bloque.</li>
+          </ul>
+          <h3>Atributo</h3>
+          <ul>
+            <li><strong>Identificador</strong>: selecciona el tag que se va a numerar.</li>
+          </ul>
+          <h3>Paso a paso</h3>
+          <ol class="steps">
+            <li>Configura parámetros y pulsa <strong>OK</strong>.</li>
+            <li>Indica el primer punto de inserción.</li>
+            <li>Continúa pinchando para generar la secuencia.</li>
+            <li>Finaliza con <strong>ESC</strong> o <strong>Enter</strong>.</li>
+          </ol>
+        </section>
+
+        <section id="texto">
+          <h2>8. Pestaña: Texto</h2>
+          <h3>Propiedades del texto</h3>
+          <ul>
+            <li><strong>Estilo</strong>, <strong>justificación</strong>, <strong>altura</strong> y <strong>rotación</strong>.</li>
+          </ul>
+          <h3>Paso a paso</h3>
+          <ol class="steps">
+            <li>Pulsa <strong>OK</strong>.</li>
+            <li>Haz clic en cada punto donde colocar el texto.</li>
+            <li>El valor se incrementa automáticamente en cada inserción.</li>
+            <li>Finaliza con <strong>ESC</strong> o <strong>Enter</strong>.</li>
+          </ol>
+        </section>
+
+        <section id="seleccion">
+          <h2>9. Pestaña: Selección</h2>
+          <h3>Tipo de entidad</h3>
+          <ul>
+            <li>Permite combinar <strong>Texto</strong>, <strong>MTexto</strong> y <strong>Bloque</strong>.</li>
+            <li>Si hay bloques, define el <strong>Identificador</strong> (tag) a editar.</li>
+          </ul>
+          <h3>Acción</h3>
+          <ul>
+            <li><strong>Añadir como prefijo</strong>.</li>
+            <li><strong>Añadir como sufijo</strong>.</li>
+            <li><strong>Sustituir</strong>.</li>
+          </ul>
+          <h3>Paso a paso</h3>
+          <ol class="steps">
+            <li>Pulsa <strong>OK</strong>.</li>
+            <li>Selecciona el primer objeto y continúa en el orden deseado.</li>
+            <li>El valor se aplica al instante en cada clic.</li>
+            <li>Finaliza con <strong>ESC</strong>.</li>
+          </ol>
+        </section>
+
+        <section id="auto">
+          <h2>10. Pestaña: Auto</h2>
+          <h3>Clasificación</h3>
+          <ul>
+            <li><strong>Ordenar por</strong>: criterio principal.</li>
+            <li><strong>Entonces por</strong>: criterio secundario para desempate.</li>
+          </ul>
+          <h3>Paso a paso</h3>
+          <ol class="steps">
+            <li>Pulsa <strong>OK</strong>.</li>
+            <li>Haz una selección por ventana de todos los elementos.</li>
+            <li>Confirma con <strong>Enter</strong>.</li>
+            <li>El sistema renumera automáticamente según el orden geométrico definido.</li>
+          </ol>
+        </section>
+
+        <footer>
+          <p>© 2026 Alaitz · Jon · Documentación de operación de Incrementar.lsp</p>
+        </footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
