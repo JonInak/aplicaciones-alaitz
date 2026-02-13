@@ -1017,7 +1017,7 @@
     ":boxed_column{label=\"Parametros\";"
     ":edit_box{label=\"Valor inicial\";key=\"val\";edit_width=8;}"
     ":edit_box{label=\"Incremento\";key=\"inc\";edit_width=8;}"
-    ":edit_box{label=\"Separador\";key=\"sep\";edit_width=8;}"
+    ":edit_box{label=\"Separador\";key=\"sep\";edit_width=4;}"
     ":edit_box{label=\"Prefijo\";key=\"pref\";edit_width=8;}"
     ":edit_box{label=\"Sufijo\";key=\"suff\";edit_width=8;}"
     "}}"
