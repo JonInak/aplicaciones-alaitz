@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guía de Usuario - Incremento Numeración v2.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --accent: #f59e0b;
+            --bg: #ffffff;
+            --text: #1e293b;
+            --light-bg: #f8fafc;
+            --border: #e2e8f0;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background-color: var(--light-bg);
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--bg);
+            padding: 60px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 30px;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--secondary);
+            font-weight: 300;
+        }
+
+        section {
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.8rem;
+            color: var(--primary-dark);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 24px;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            margin: 25px 0 15px;
+            color: var(--text);
+            border-left: 3px solid var(--border);
+            padding-left: 15px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .command-box {
+            background-color: #1e293b;
+            color: #f8fafc;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            display: inline-block;
+            margin: 10px 0;
+            border-left: 5px solid var(--accent);
+        }
+
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .tip {
+            background-color: #fef3c7;
+            border-left: 4px solid var(--accent);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+            font-style: italic;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .card {
+            border: 1px solid var(--border);
+            padding: 20px;
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            background-color: var(--light-bg);
+        }
+
+        .card h4 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-family: 'Outfit', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        footer {
+            margin-top: 60px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--secondary);
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+        }
+
+        .badge {
+            background: var(--primary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            vertical-align: middle;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; width: 100%; max-width: 100%; border: none; padding: 0; }
+            .card { break-inside: avoid; }
+            header { margin-top: 20px; }
+        }
+
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+            .container { padding: 30px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>INCREMENTO NUMERACIÓN</h1>
+            <p class="subtitle">Guía de Usuario Avanzada • v2.0 • LusoCAD / AutoCAD</p>
+        </header>
+
+        <section>
+            <h2>1. Introducción</h2>
+            <p>Esta herramienta automatiza la numeración secuencial de elementos en tus planos. Ya sea insertando nuevos pilotes con atributos o renombrando textos existentes por su posición en el dibujo, este script reduce errores y ahorra horas de trabajo repetitivo.</p>
+        </section>
+
+        <section>
+            <h2>2. Instalación Rápida</h2>
+            <ol>
+                <li>Escribe el comando <strong>APPLOAD</strong> en la consola.</li>
+                <li>Selecciona el archivo <strong>Incrementar.lsp</strong> y pulsa Cargar.</li>
+                <li>Confirma que ves el mensaje: <span style="color: var(--primary); font-weight: bold;">"Incremento numeracion cargado."</span></li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>3. El Comando Principal</h2>
+            <p>Para abrir el panel de control unificado, escribe:</p>
+            <div class="command-box">INCREMENTAR</div>
+            <p>Se abrirá un diálogo con 4 pestañas especializadas. El panel de la <strong>izquierda</strong> controla el formato global (números, letras, prefijos, ceros, etc.) y se mantiene constante al cambiar de pestaña.</p>
+            
+            <div class="tip">
+                <strong>💡 TRUCO DE FORMATO:</strong> Si quieres numerar como "01, 02, 03...", escribe <strong>01</strong> en el campo "Valor inicial". El programa detectará el cero y mantendrá el formato automáticamente.
+            </div>
+        </section>
+
+        <section>
+            <h2>4. Las 4 Herramientas</h2>
+            <div class="grid">
+                <div class="card">
+                    <h4>🏗️ ATRIBUTO</h4>
+                    <p>Inserta nuevos bloques (ej: pilotes) uno a uno. Permite <strong>examinar</strong> un bloque existente para copiar su nombre y atributos automáticamente.</p>
+                </div>
+                <div class="card">
+                    <h4>✍️ TEXTO</h4>
+                    <p>Inserta textos nuevos e incrementales. Ideal para numerar zonas o detalles pinchando directamente sobre el plano.</p>
+                </div>
+                <div class="card">
+                    <h4>🖱️ SELECCIÓN</h4>
+                    <p>Modifica elementos que <strong>ya existen</strong>. Ve pinchando Textos, MTextos o Bloques en el orden que quieras que se numeren.</p>
+                </div>
+                <div class="card">
+                    <h4>⚡ AUTO</h4>
+                    <p>Renumeración masiva. Selecciona todo un área y el programa ordenará los elementos (ej: de izquierda a derecha) y los numerará al instante.</p>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>5. Atajos Directos</h2>
+            <p>Si ya conoces la herramienta y quieres saltar directamente a una función sin pasar por el menú:</p>
+            <ul>
+                <li><strong>NUMERAR</strong>: Inserción secuencial de bloques.</li>
+                <li><strong>RENUMERAR</strong>: Renumeración automática por posición.</li>
+                <li><strong>INSERTARTEXTO</strong>: Inserción secuencial de textos.</li>
+                <li><strong>INCREMENTARSUFIJO</strong>: Ideal para sub-números (ej: 1A, 1B, 1C).</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2 style="color: var(--accent);">⚠️ Compatibilidad</h2>
+            <p>El script es totalmente compatible con <strong>Bloques Dinámicos</strong> y bloques anónimos. Puede detectar el "Nombre Efectivo" del bloque incluso si ha sido modificado dinámicamente.</p>
+        </section>
+
+        <footer>
+            <p>© 2026 Alaitz - Jon • Potenciado por Antigravity Technology</p>
+        </header>
+    </div>
+</body>
+</html>
