@@ -1027,11 +1027,14 @@
 ;; pil:dcl-tab-buttons - Genera la cadena DCL de los botones de pestana
 (defun pil:dcl-tab-buttons ()
   (strcat
+    ":column{"
     ":row{"
     ":button{label=\"Atributo\";key=\"tab1\";width=10;fixed_width=true;}"
     ":button{label=\"Texto\";key=\"tab2\";width=10;fixed_width=true;}"
     ":button{label=\"Seleccion\";key=\"tab3\";width=10;fixed_width=true;}"
     ":button{label=\"Auto\";key=\"tab4\";width=10;fixed_width=true;}"
+    "}"
+    ":text{key=\"tabinfo\";label=\"Pestana actual: Seleccion\";}"
     "}"
   )
 )
@@ -1204,29 +1207,49 @@
        (if (= (get_tile \"num\") \"1\") 1 0)
        (if (= (get_tile \"maj\") \"1\") 2 0)
        (if (= (get_tile \"min\") \"1\") 4 0)))
-     (done_dialog 11)"
+     (setq dlgpt (done_dialog 11))"
   )
   (action_tile "tab2"
     "(setq typ (+
        (if (= (get_tile \"num\") \"1\") 1 0)
        (if (= (get_tile \"maj\") \"1\") 2 0)
        (if (= (get_tile \"min\") \"1\") 4 0)))
-     (done_dialog 12)"
+     (setq dlgpt (done_dialog 12))"
   )
   (action_tile "tab3"
     "(setq typ (+
        (if (= (get_tile \"num\") \"1\") 1 0)
        (if (= (get_tile \"maj\") \"1\") 2 0)
        (if (= (get_tile \"min\") \"1\") 4 0)))
-     (done_dialog 13)"
+     (setq dlgpt (done_dialog 13))"
   )
   (action_tile "tab4"
     "(setq typ (+
        (if (= (get_tile \"num\") \"1\") 1 0)
        (if (= (get_tile \"maj\") \"1\") 2 0)
        (if (= (get_tile \"min\") \"1\") 4 0)))
-     (done_dialog 14)"
+     (setq dlgpt (done_dialog 14))"
   )
+)
+
+;; pil:get-tab-name - Nombre legible de la pestana actual
+(defun pil:get-tab-name (curtab)
+  (cond
+    ((= curtab 1) "Atributo")
+    ((= curtab 2) "Texto")
+    ((= curtab 3) "Seleccion")
+    ((= curtab 4) "Auto")
+    (T "Desconocida")
+  )
+)
+
+;; pil:setup-tab-visual - Marca visualmente la pestana activa
+(defun pil:setup-tab-visual (curtab)
+  (set_tile "tabinfo" (strcat "Pestana actual: " (pil:get-tab-name curtab)))
+  (mode_tile "tab1" (if (= curtab 1) 1 0))
+  (mode_tile "tab2" (if (= curtab 2) 1 0))
+  (mode_tile "tab3" (if (= curtab 3) 1 0))
+  (mode_tile "tab4" (if (= curtab 4) 1 0))
 )
 
 ;; c:INCREMENTAR - Comando principal con dialogo unificado y pestanas
@@ -1237,7 +1260,7 @@
                    auto_sort1 auto_sort2 sortlst
                    blkname scl rot attlst atidx
                    pilotes count pad i ent elst pt hor vert nor
-                   newval save old_attreq)
+                   newval save old_attreq dlgpt)
 
   ;; Valores por defecto
   (setq typ   1            ;; Numeros
@@ -1286,7 +1309,9 @@
   (while (> what_next 0)
     (if (not (new_dialog
                (strcat "PilTab" (itoa curtab))
-               dcl_id))
+               dcl_id
+               ""
+               dlgpt))
       (progn (alert "Error cargando el dialogo.") (setq what_next 0))
     )
     (if (> what_next 0)
@@ -1295,6 +1320,7 @@
         (pil:setup-left-panel typ val inc sep pref suff)
         (pil:setup-left-actions)
         (pil:setup-tab-actions)
+        (pil:setup-tab-visual curtab)
 
         ;; Configurar contenido segun la pestana actual
         (cond
@@ -1327,7 +1353,7 @@
                        (mode_tile \"rot\" 2)))"
            )
            (action_tile "attag" "(setq atidx (atoi $value))")
-           (action_tile "browse" "(done_dialog 20)")
+           (action_tile "browse" "(setq dlgpt (done_dialog 20))")
           )
 
           ;; ---- PESTANA 2: TEXTO ----
@@ -1436,10 +1462,10 @@
              (if (= (get_tile \"min\") \"1\") 4 0)))
            (if (zerop typ)
              (progn (alert \"Seleccione al menos un tipo de valor.\")
-                    (setq typ 1) (done_dialog 2))
-             (done_dialog 1))"
+                    (setq typ 1) (setq dlgpt (done_dialog 2)))
+             (setq dlgpt (done_dialog 1)))"
         )
-        (action_tile "cancel" "(done_dialog 0)")
+        (action_tile "cancel" "(setq dlgpt (done_dialog 0))")
 
         ;; Iniciar dialogo
         (setq what_next (start_dialog))
