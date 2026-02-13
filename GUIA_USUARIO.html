@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guía de Usuario - Incremento Numeración v2.0</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --primary: #2563eb;
@@ -87,11 +90,13 @@
         }
 
         h3 {
-            font-size: 1.3rem;
-            margin: 25px 0 15px;
-            color: var(--text);
-            border-left: 3px solid var(--border);
-            padding-left: 15px;
+            font-size: 1.1rem;
+            margin: 20px 0 10px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 5px;
         }
 
         p {
@@ -111,13 +116,23 @@
             border-left: 5px solid var(--accent);
         }
 
-        ul, ol {
-            margin-left: 25px;
+        ul,
+        ol {
+            margin-left: 20px;
             margin-bottom: 20px;
         }
 
         li {
             margin-bottom: 8px;
+        }
+
+        li strong {
+            color: var(--text);
+            font-weight: 700;
+            background-color: var(--light-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
         }
 
         .tip {
@@ -175,20 +190,60 @@
         }
 
         @media print {
-            body { background: white; padding: 0; }
-            .container { box-shadow: none; width: 100%; max-width: 100%; border: none; padding: 0; }
-            .card { break-inside: avoid; }
-            header { margin-top: 20px; }
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                width: 100%;
+                max-width: 100%;
+                border: none;
+                padding: 0;
+            }
+
+            .card {
+                break-inside: avoid;
+            }
+
+            header {
+                margin-top: 20px;
+            }
+
+            h2 {
+                page-break-after: avoid;
+            }
+
+            section {
+                page-break-inside: avoid;
+            }
         }
 
         @media (max-width: 768px) {
-            .grid { grid-template-columns: 1fr; }
-            .container { padding: 30px; }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 30px;
+            }
+        }
+
+        .page-break {
+            page-break-before: always;
+            display: block;
+            height: 1px;
+            margin: 50px 0;
+            border-top: 1px dashed var(--border);
+            /* Visual guide in browser */
         }
     </style>
 </head>
+
 <body>
     <div class="container">
+        <!-- PÁGINA 1: RESUMEN Y ACCESO RÁPIDO -->
         <header>
             <h1>INCREMENTO NUMERACIÓN</h1>
             <p class="subtitle">Guía de Usuario Avanzada • v2.0 • LusoCAD / AutoCAD</p>
@@ -196,7 +251,9 @@
 
         <section>
             <h2>1. Introducción</h2>
-            <p>Esta herramienta automatiza la numeración secuencial de elementos en tus planos. Ya sea insertando nuevos pilotes con atributos o renombrando textos existentes por su posición en el dibujo, este script reduce errores y ahorra horas de trabajo repetitivo.</p>
+            <p>Esta herramienta automatiza la numeración secuencial de elementos en tus planos. Ya sea insertando nuevos
+                pilotes con atributos o renombrando textos existentes por su posición en el dibujo, este script reduce
+                errores y ahorra horas de trabajo repetitivo.</p>
         </section>
 
         <section>
@@ -204,7 +261,8 @@
             <ol>
                 <li>Escribe el comando <strong>APPLOAD</strong> en la consola.</li>
                 <li>Selecciona el archivo <strong>Incrementar.lsp</strong> y pulsa Cargar.</li>
-                <li>Confirma que ves el mensaje: <span style="color: var(--primary); font-weight: bold;">"Incremento numeracion cargado."</span></li>
+                <li>Confirma que ves el mensaje: <span style="color: var(--primary); font-weight: bold;">"Incremento
+                        numeracion cargado."</span></li>
             </ol>
         </section>
 
@@ -212,10 +270,14 @@
             <h2>3. El Comando Principal</h2>
             <p>Para abrir el panel de control unificado, escribe:</p>
             <div class="command-box">INCREMENTAR</div>
-            <p>Se abrirá un diálogo con 4 pestañas especializadas. El panel de la <strong>izquierda</strong> controla el formato global (números, letras, prefijos, ceros, etc.) y se mantiene constante al cambiar de pestaña.</p>
-            
+            <p>Se abrirá un diálogo con 4 pestañas especializadas. El panel de la <strong>izquierda</strong> controla el
+                formato global (números, letras, prefijos, ceros, etc.) y se mantiene constante al cambiar de pestaña.
+            </p>
+
             <div class="tip">
-                <strong>💡 TRUCO DE FORMATO:</strong> Si quieres numerar como "01, 02, 03...", escribe <strong>01</strong> en el campo "Valor inicial". El programa detectará el cero y mantendrá el formato automáticamente.
+                <strong>💡 TRUCO DE FORMATO:</strong> Si quieres numerar como "01, 02, 03...", escribe
+                <strong>01</strong> en el campo "Valor inicial". El programa detectará el cero y mantendrá el formato
+                automáticamente.
             </div>
         </section>
 
@@ -224,19 +286,23 @@
             <div class="grid">
                 <div class="card">
                     <h4>🏗️ ATRIBUTO</h4>
-                    <p>Inserta nuevos bloques (ej: pilotes) uno a uno. Permite <strong>examinar</strong> un bloque existente para copiar su nombre y atributos automáticamente.</p>
+                    <p>Inserta nuevos bloques (ej: pilotes) uno a uno. Permite <strong>examinar</strong> un bloque
+                        existente para copiar su nombre y atributos automáticamente.</p>
                 </div>
                 <div class="card">
                     <h4>✍️ TEXTO</h4>
-                    <p>Inserta textos nuevos e incrementales. Ideal para numerar zonas o detalles pinchando directamente sobre el plano.</p>
+                    <p>Inserta textos nuevos e incrementales. Ideal para numerar zonas o detalles pinchando directamente
+                        sobre el plano.</p>
                 </div>
                 <div class="card">
                     <h4>🖱️ SELECCIÓN</h4>
-                    <p>Modifica elementos que <strong>ya existen</strong>. Ve pinchando Textos, MTextos o Bloques en el orden que quieras que se numeren.</p>
+                    <p>Modifica elementos que <strong>ya existen</strong>. Ve pinchando Textos, MTextos o Bloques en el
+                        orden que quieras que se numeren.</p>
                 </div>
                 <div class="card">
                     <h4>⚡ AUTO</h4>
-                    <p>Renumeración masiva. Selecciona todo un área y el programa ordenará los elementos (ej: de izquierda a derecha) y los numerará al instante.</p>
+                    <p>Renumeración masiva. Selecciona todo un área y el programa ordenará los elementos (ej: de
+                        izquierda a derecha) y los numerará al instante.</p>
                 </div>
             </div>
         </section>
@@ -254,12 +320,117 @@
 
         <section>
             <h2 style="color: var(--accent);">⚠️ Compatibilidad</h2>
-            <p>El script es totalmente compatible con <strong>Bloques Dinámicos</strong> y bloques anónimos. Puede detectar el "Nombre Efectivo" del bloque incluso si ha sido modificado dinámicamente.</p>
+            <p>El script es totalmente compatible con <strong>Bloques Dinámicos</strong> y bloques anónimos. Puede
+                detectar el "Nombre Efectivo" del bloque incluso si ha sido modificado dinámicamente.</p>
+        </section>
+
+        <!-- SALTO DE PÁGINA -->
+        <div class="page-break"></div>
+
+        <!-- PÁGINA 2: DETALLE TÉCNICO -->
+        <section>
+            <h2>6. Detalle del Panel Izquierdo</h2>
+            <p>Este panel aparece en todas las pestañas y define <strong>CÓMO</strong> van a incrementarse los números.
+            </p>
+            <ul>
+                <li><strong>Tipo de Valor</strong>:
+                    <ul>
+                        <li><em>Números [0-9]</em>: Para series numéricas normales (1, 2, 3...).</li>
+                        <li><em>Mayúsculas [A-Z]</em>: Para letras (A, B, C... AA, AB...).</li>
+                        <li><em>Minúsculas [a-z]</em>: Igual pero en minúsculas.</li>
+                    </ul>
+                </li>
+                <li><strong>Valor Inicial</strong>: Es el número de partida.
+                    <br><em>Importante:</em> Si escribes <strong>01</strong>, el programa entenderá que quieres mantener
+                    el cero inicial (01, 02...).
+                </li>
+                <li><strong>Incremento</strong>: Cuánto suma cada vez. Pon <strong>1</strong> para ir de uno en uno, o
+                    <strong>2</strong> para pares (2, 4, 6...).</li>
+                <li><strong>Separador/Prefijo/Sufijo</strong>: Texto fijo que se añade.
+                    <br>Ejemplo: Prefijo="P-", Valor="01" &rarr; Resultado: <strong>P-01</strong>.
+                </li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>7. Pestaña: ATRIBUTO (Detalle)</h2>
+            <p>Configuración detallada para insertar bloques:</p>
+
+            <h3>Sección "Bloque"</h3>
+            <ul>
+                <li><strong>Nombre del bloque</strong>: Escribe aquí el nombre interno del bloque que quieres insertar.
+                </li>
+                <li><strong>Botón Examinar...</strong>: La forma recomendada. Púlsalo y haz clic en un bloque que ya
+                    esté en el dibujo. El programa rellenará el nombre automáticamente.</li>
+                <li><strong>Escala / Rotación</strong>: Define a qué tamaño y ángulo saldrá el bloque nuevo. Por defecto
+                    copia los datos del bloque que examinaste.</li>
+            </ul>
+
+            <h3>Sección "Atributo"</h3>
+            <ul>
+                <li><strong>Identificador</strong>: Despliega la lista para elegir <strong>qué atributo</strong> quieres
+                    numerar. Si el bloque tiene varios (ej: "COTAL", "NUMERO"), elige aquí "NUMERO".</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>8. Pestaña: TEXTO (Detalle)</h2>
+            <p>Configuración para insertar textos sueltos:</p>
+
+            <h3>Sección "Propiedades"</h3>
+            <ul>
+                <li><strong>Estilo</strong>: Lista de todos los estilos de texto (TextStyle) cargados en tu dibujo.</li>
+                <li><strong>Justificación</strong>: El punto de anclaje del texto (Izquierda, Centro, Medio...).</li>
+                <li><strong>Altura</strong>: Tamaño del texto en unidades de dibujo.</li>
+                <li><strong>Rotación</strong>: Ángulo de inclinación del texto.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>9. Pestaña: SELECCIÓN (Detalle)</h2>
+            <p>Configuración para editar elementos existentes:</p>
+
+            <h3>Sección "Tipo de Entidad"</h3>
+            <ul>
+                <li><strong>Texto / MTexto / Bloque</strong>: Marca qué tipo de objetos vas a pinchar. Puedes marcar
+                    varios a la vez.</li>
+                <li><strong>Identificador (Tag)</strong>: <em>Solo para Bloques</em>. Escribe aquí el nombre del
+                    atributo a modificar (ej: "NM").</li>
+            </ul>
+
+            <h3>Sección "Acción"</h3>
+            <ul>
+                <li><strong>Añadir como prefijo</strong>: Mantiene el texto que ya había y pone el número delante. (Ej:
+                    "Muro" &rarr; "01 Muro").</li>
+                <li><strong>Añadir como sufijo</strong>: Pone el número detrás. (Ej: "Muro" &rarr; "Muro 01").</li>
+                <li><strong>Sustituir</strong>: Borra todo lo que había y pone solo el número nuevo.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>10. Pestaña: AUTO (Detalle)</h2>
+            <p>Configuración para la renumeración masiva:</p>
+
+            <h3>Sección "Clasificación"</h3>
+            <p>Define el orden en el que se asignarán los números:</p>
+            <ul>
+                <li><strong>Ordenar por...</strong>: El criterio principal.
+                    <ul>
+                        <li><em>X Ascendente</em>: De Izquierda a Derecha.</li>
+                        <li><em>Y Descendente</em>: De Arriba a Abajo (como leemos texto).</li>
+                    </ul>
+                </li>
+                <li><strong>Entonces por...</strong>: Criterio secundario (desempate).
+                    <br>Ejemplo: Si eliges "Ordenar por Y Descendente" y "Entonces por X Ascendente", numerará por filas
+                    de arriba a abajo.
+                </li>
+            </ul>
         </section>
 
         <footer>
             <p>© 2026 Alaitz - Jon • Potenciado por Antigravity Technology</p>
-        </header>
+        </footer>
     </div>
 </body>
+
 </html>
