@@ -5,13 +5,13 @@
   Basado en las rutinas de Gile (Gilles Chanteau).
 
   Comandos disponibles:
-    INCPIL    - Menu principal (elegir operacion)
-    NUMPIL    - Numerar secuencialmente
-    RENUMPIL  - Renumerar existentes por posicion
-    INCPILTXT - Insertar textos con valor incremental
-    INCPILSUF - Incrementar sufijo de atributos NM
-    INCPILADD - Anadir valor incremental a atributos NM
-    INCPILSEL - Incrementar valor en atributos NM seleccionados
+    INCREMENTAR          - Menu principal (elegir operacion)
+    NUMERAR              - Numerar secuencialmente
+    RENUMERAR            - Renumerar existentes por posicion
+    INSERTARTEXTO        - Insertar textos con valor incremental
+    INCREMENTARSUFIJO    - Incrementar sufijo de atributos NM
+    ANADIRVALOR          - Anadir valor incremental a atributos NM
+    INCREMENTARSELECCION - Incrementar valor en atributos NM seleccionados
 
   Revision: 12/02/2026
 |;
@@ -418,9 +418,8 @@
 )
 
 ;;=================== COMANDO NUMPIL ===================;;
-;; Numera pilotes secuencialmente con auto zero-padding
-
-(defun c:NUMPIL (/ temp file dcl_id what_next val inc pref suff
+;; c:NUMERAR - Numerar pilotes secuencialmente en el dibujo
+(defun c:NUMERAR (/ temp file dcl_id what_next val inc pref suff
                    pilotes count pad i ent)
   (setq temp (vl-filename-mktemp "PilNum.dcl")
         file (open temp "w")
@@ -497,9 +496,8 @@
 )
 
 ;;=================== COMANDO RENUMPIL ===================;;
-;; Renumera pilotes existentes por posicion X/Y
-
-(defun c:RENUMPIL (/ temp file dcl_id what_next val inc pref suff
+;; c:RENUMERAR - Renumerar pilotes existentes por posicion
+(defun c:RENUMERAR (/ temp file dcl_id what_next val inc pref suff
                      sortmode pilotes count pad i ent)
   (setq temp (vl-filename-mktemp "PilRenum.dcl")
         file (open temp "w")
@@ -589,9 +587,8 @@
 )
 
 ;;=================== COMANDO INCPILTXT ===================;;
-;; Inserta textos con valor incremental punto por punto
-
-(defun c:INCPILTXT (/ temp file dcl_id slst st jlst ju ht ro val inc pref suff
+;; c:INSERTARTEXTO - Insertar textos con valor incremental
+(defun c:INSERTARTEXTO (/ temp file dcl_id slst st jlst ju ht ro val inc pref suff
                       hor vert nor pt pad)
   (setq temp (vl-filename-mktemp "PilTxt.dcl")
         file (open temp "w")
@@ -741,9 +738,8 @@
 )
 
 ;;=================== COMANDO INCPILSUF ===================;;
-;; Incrementa el sufijo de los atributos NM seleccionados
-
-(defun c:INCPILSUF (/ temp file dcl_id what_next typ inc ent elst val save)
+;; c:INCREMENTARSUFIJO - Incrementar sufijo de atributos NM
+(defun c:INCREMENTARSUFIJO (/ temp file dcl_id what_next typ inc ent elst val save)
 
   (defun pil:ValidSel (elst / v)
     (setq v (cdr (assoc 1 elst))
@@ -835,9 +831,8 @@
 )
 
 ;;=================== COMANDO INCPILADD ===================;;
-;; Anade un valor incrementado al inicio o al final del atributo NM
-
-(defun c:INCPILADD (/ temp file dcl_id val inc pref suff pos ent elst str
+;; c:ANADIRVALOR - Anadir valor incremental a atributos NM
+(defun c:ANADIRVALOR (/ temp file dcl_id val inc pref suff pos ent elst str
                       save att)
   (setq temp (vl-filename-mktemp "PilAdd.dcl")
         file (open temp "w")
@@ -937,9 +932,8 @@
 )
 
 ;;=================== COMANDO INCPILSEL ===================;;
-;; Incrementa un valor en los atributos NM seleccionados uno a uno
-
-(defun c:INCPILSEL (/ temp file dcl_id val inc pref suff ent elst typ save)
+;; c:INCREMENTARSELECCION - Incrementar valor en atributos NM seleccionados
+(defun c:INCREMENTARSELECCION (/ temp file dcl_id val inc pref suff ent elst typ save)
   (setq temp (vl-filename-mktemp "PilSel.dcl")
         file (open temp "w")
   )
@@ -1235,8 +1229,8 @@
   )
 )
 
-;; c:INCPIL - Comando principal con dialogo unificado y pestanas
-(defun c:INCPIL (/ temp file dcl_id curtab what_next accepted
+;; c:INCREMENTAR - Comando principal con dialogo unificado y pestanas
+(defun c:INCREMENTAR (/ temp file dcl_id curtab what_next accepted
                    typ val inc sep pref suff
                    slst st jlst ju ht tro
                    sel_action sel_etypes tag
@@ -1620,7 +1614,7 @@
 
 (princ "\n==============================================")
 (princ "\n  Incremento numeracion cargado.")
-(princ "\n  Comando principal: INCPIL")
-(princ "\n  Atajos: NUMPIL, RENUMPIL, INCPILTXT,")
-(princ "\n          INCPILSUF, INCPILADD, INCPILSEL")
+(princ "\n  Comando principal: INCREMENTAR")
+(princ "\n  Atajos: NUMERAR, RENUMERAR, INSERTARTEXTO,")
+(princ "\n          INCREMENTARSUFIJO, ANADIRVALOR, INCREMENTARSELECCION")
 (princ "\n==============================================")(princ)

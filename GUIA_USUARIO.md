@@ -14,9 +14,9 @@ Esta herramienta para AutoCAD/LusoCAD permite automatizar la numeración e incre
 
 ---
 
-## 2. Comando Principal: `INCPIL`
+## 2. Comando Principal: `INCREMENTAR`
 
-Escribe **`INCPIL`** en la línea de comandos para abrir el panel principal.
+Escribe **`INCREMENTAR`** en la línea de comandos para abrir el panel principal.
 
 ### Panel de Parámetros (Izquierda)
 Este panel se comparte entre todas las pestañas:
@@ -62,7 +62,7 @@ Numeración automática de muchos elementos a la vez **por su posición**.
 * **Padding (Ceros)**: 
   * En modo "Auto", el programa pone los ceros automáticamente según el total.
   * En modos manuales, pon los ceros en el "Valor inicial" (ej: `001`).
-* **Atajos**: Si no quieres pasar por el menú, puedes usar `NUMPIL`, `INCPILTXT`, `RENUMPIL` directamente para funciones rápidas.
+* **Atajos**: Si no quieres pasar por el menú, puedes usar `NUMERAR`, `INSERTARTEXTO`, `RENUMERAR` directamente para funciones rápidas. Además tienes `INCREMENTARSUFIJO`, `ANADIRVALOR` e `INCREMENTARSELECCION`.
 
 ---
 
