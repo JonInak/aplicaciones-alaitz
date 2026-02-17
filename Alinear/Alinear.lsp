@@ -557,7 +557,7 @@
   )
 )
 
-(defun ali:draw-dbg-ray-one (refs ent / ed typ bb minp maxp yr botY topY hVal xMid yMid ins xProbe yIns targetUp targetAny targetNear targetY col pTop pTar)
+(defun ali:draw-dbg-ray-one (refs ent / ed typ bb minp maxp yr botY topY hVal xMid yMid ins xProbe yIns targetUp targetAny targetNear targetY col pFrom pTar)
   (setq ed (entget ent)
         typ (cdr (assoc 0 ed)))
   (if (/= typ "INSERT")
@@ -605,9 +605,10 @@
               nil
             )
             (progn
-              (setq pTop (list xProbe topY 0.0)
+              ;; Debug desde el punto de insercion real del bloque.
+              (setq pFrom (list xProbe yIns 0.0)
                     pTar (list xProbe targetY 0.0))
-              (if (ali:add-debug-line pTop pTar col)
+              (if (ali:add-debug-line pFrom pTar col)
                 (progn
                   (setq ali:*last-reason*
                          (strcat
