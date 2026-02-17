@@ -285,6 +285,45 @@
   )
 )
 
+;; Rango geometrico (bot/top) consistente con la logica de debug.
+(defun ali:get-stretch-range (ent x yIns targetY / yr bb)
+  (setq yr (if targetY
+             (ali:get-insert-range-for-target ent x yIns targetY)
+             nil))
+  (if (not yr)
+    (setq yr (ali:get-effective-y-range ent)))
+  (if yr
+    yr
+    (progn
+      (setq bb (ali:get-bbox ent))
+      (if bb
+        (list (cadr (car bb)) (cadr (cadr bb)))
+      )
+    )
+  )
+)
+
+;; Fija base tras estirado usando rango geometrico (no bbox global).
+(defun ali:lock-bottom-stretch (ent x yIns targetY botY / yr newBot dy)
+  (setq yr (ali:get-stretch-range ent x yIns nil))
+  (setq newBot (if yr (car yr) nil))
+  (if (not newBot)
+    (setq newBot (ali:get-bot-y ent)))
+  (if newBot
+    (progn
+      (setq dy (- botY newBot))
+      (if (> (abs dy) 1e-9)
+        (ali:move-by ent (list 0.0 dy 0.0))
+      )
+    )
+  )
+)
+
+(defun ali:get-top-stretch (ent x yIns targetY / yr)
+  (setq yr (ali:get-stretch-range ent x yIns nil))
+  (if yr (cadr yr))
+)
+
 ;; ------------------------------------------------------------
 ;; Referencia: Y objetivo por interseccion vertical en X
 ;; ------------------------------------------------------------
@@ -760,7 +799,14 @@
   )
 )
 
-(defun ali:try-dyn-height (ent obj delta botY targetY / c prop v0 v1 topNow)
+(defun ali:verify-top-geo (ent x yIns targetY tol / topNow)
+  (setq topNow (ali:get-top-stretch ent x yIns targetY))
+  (if (and topNow (<= (abs (- topNow targetY)) tol))
+    T
+  )
+)
+
+(defun ali:try-dyn-height (ent obj x yIns delta botY targetY / c prop v0 v1 topNow)
   (setq c (ali:get-dyn-height-prop obj))
   (if c
     (progn
@@ -770,29 +816,32 @@
       (if (> v1 1e-6)
         (if (ali:set-dyn-prop-number prop v1)
           (progn
-            (ali:lock-bottom ent botY)
-            (if (not (ali:verify-top ent targetY 0.05))
+            (ali:lock-bottom-stretch ent x yIns targetY botY)
+            (if (not (ali:verify-top-geo ent x yIns targetY 0.05))
               (progn
                 ;; segunda pasada correctiva
-                (setq topNow (ali:get-top-y ent))
+                (setq topNow (ali:get-top-stretch ent x yIns targetY))
                 (if topNow
                   (progn
                     (setq v1 (+ v1 (- targetY topNow)))
                     (if (> v1 1e-6)
                       (if (ali:set-dyn-prop-number prop v1)
-                        (ali:lock-bottom ent botY)
+                        (ali:lock-bottom-stretch ent x yIns targetY botY)
                       )
                     )
                   )
                 )
               )
             )
-            (if (ali:verify-top ent targetY 0.08)
+            (if (ali:verify-top-geo ent x yIns targetY 0.10)
               (progn
                 (setq ali:*last-reason* (strcat "ok-dynprop:" (caddr c)))
                 T
               )
-              (setq ali:*last-reason* (strcat "dynprop-no-ajusta:" (caddr c)))
+              (progn
+                (setq ali:*last-reason* (strcat "dynprop-no-ajusta:" (caddr c)))
+                nil
+              )
             )
           )
         )
@@ -801,7 +850,7 @@
   )
 )
 
-(defun ali:try-obj-height (ent delta botY targetY / c pname v0 v1 topNow)
+(defun ali:try-obj-height (ent x yIns delta botY targetY / c pname v0 v1 topNow)
   (setq c (ali:get-obj-height-prop ent))
   (if c
     (progn
@@ -811,29 +860,32 @@
       (if (> v1 1e-6)
         (if (ali:set-obj-prop-number ent pname v1)
           (progn
-            (ali:lock-bottom ent botY)
-            (if (not (ali:verify-top ent targetY 0.05))
+            (ali:lock-bottom-stretch ent x yIns targetY botY)
+            (if (not (ali:verify-top-geo ent x yIns targetY 0.05))
               (progn
                 ;; segunda pasada correctiva
-                (setq topNow (ali:get-top-y ent))
+                (setq topNow (ali:get-top-stretch ent x yIns targetY))
                 (if topNow
                   (progn
                     (setq v1 (+ v1 (- targetY topNow)))
                     (if (> v1 1e-6)
                       (if (ali:set-obj-prop-number ent pname v1)
-                        (ali:lock-bottom ent botY)
+                        (ali:lock-bottom-stretch ent x yIns targetY botY)
                       )
                     )
                   )
                 )
               )
             )
-            (if (ali:verify-top ent targetY 0.08)
+            (if (ali:verify-top-geo ent x yIns targetY 0.10)
               (progn
                 (setq ali:*last-reason* (strcat "ok-objprop:" pname))
                 T
               )
-              (setq ali:*last-reason* (strcat "objprop-no-ajusta:" pname))
+              (progn
+                (setq ali:*last-reason* (strcat "objprop-no-ajusta:" pname))
+                nil
+              )
             )
           )
         )
@@ -842,26 +894,58 @@
   )
 )
 
-(defun ali:try-yscale (ent obj botY oldH targetY / ys sign absS newH newScale)
-  (if (and (> oldH 1e-8) (vlax-property-available-p obj 'YScaleFactor T))
+(defun ali:try-yscale (ent obj x yIns botY topY targetY / ys sign absS curSpan goalSpan newScale topNow curSpanNow ratio i)
+  (setq curSpan (- topY yIns)
+        goalSpan (- targetY yIns))
+  (if (and (> curSpan 1e-8)
+           (> goalSpan (+ curSpan 1e-6))
+           (vlax-property-available-p obj 'YScaleFactor T))
     (progn
       (setq ys (vla-get-yscalefactor obj)
             sign (if (< ys 0.0) -1.0 1.0)
             absS (max 1e-6 (abs ys))
-            newH (- targetY botY))
-      (if (> newH 1e-8)
+            newScale (* sign (* absS (/ goalSpan curSpan))))
+      (if (ali:set-yscale obj newScale)
         (progn
-          (setq newScale (* sign (* absS (/ newH oldH))))
-          (if (ali:set-yscale obj newScale)
-            (progn
-              (ali:lock-bottom ent botY)
-              (if (ali:verify-top ent targetY 0.08)
-                (progn
-                  (setq ali:*last-reason* "ok-yscale")
-                  T
+          (ali:lock-bottom-stretch ent x yIns targetY botY)
+          ;; Pasadas correctivas sobre la misma medida verde (insercion->top).
+          (setq i 0)
+          (while (< i 3)
+            (setq topNow (ali:get-top-stretch ent x yIns targetY))
+            (if (or (not topNow) (<= (abs (- targetY topNow)) 0.05))
+              (setq i 3)
+              (progn
+                (setq curSpanNow (- topNow yIns))
+                (if (> curSpanNow 1e-8)
+                  (progn
+                    (setq ys (vla-get-yscalefactor obj)
+                          sign (if (< ys 0.0) -1.0 1.0)
+                          absS (max 1e-6 (abs ys))
+                          ratio (/ goalSpan curSpanNow)
+                          newScale (* sign absS ratio))
+                    (if (ali:set-yscale obj newScale)
+                      (ali:lock-bottom-stretch ent x yIns targetY botY)
+                      (setq i 3)
+                    )
+                  )
+                  (setq i 3)
                 )
-                (setq ali:*last-reason* "yscale-no-ajusta")
               )
+            )
+            (setq i (1+ i))
+          )
+          (if (ali:verify-top-geo ent x yIns targetY 0.08)
+            (progn
+              (setq ali:*last-reason* "ok-yscale")
+              T
+            )
+            (progn
+              (setq topNow (ali:get-top-stretch ent x yIns targetY))
+              (setq ali:*last-reason*
+                     (if topNow
+                       (strcat "yscale-residual=" (rtos (- targetY topNow) 2 3))
+                       "yscale-no-ajusta"))
+              nil
             )
           )
         )
@@ -873,7 +957,7 @@
 ;; ------------------------------------------------------------
 ;; ESTIRARCOL
 ;; ------------------------------------------------------------
-(defun ali:stretch-one (refs ent / ed typ ins x yIns bb yr botY topY oldH hVal targetY targetAny delta obj ok minp maxp xMid yMid)
+(defun ali:stretch-one (refs ent / ed typ ins x yIns bb yr yrEff botCandidates topCandidates botY topY curSpan goalSpan hVal targetY targetAny delta obj ok minp maxp xMid yMid)
   (setq ali:*last-reason* "sin-detalle")
   (setq ed (entget ent)
         typ (cdr (assoc 0 ed)))
@@ -914,28 +998,57 @@
             )
             (progn
               (setq yr (ali:get-insert-range-for-target ent x yIns targetY))
-              (if (not yr) (setq yr (ali:get-effective-y-range ent)))
-              (setq botY (if yr (car yr) (cadr minp)))
-              (setq hVal (ali:get-height-value-for-ent ent))
-              (setq topY (if hVal
-                           (+ botY hVal)
-                           (if yr (cadr yr) (cadr maxp))))
-              (setq oldH (- topY botY))
-              (setq delta (- targetY topY))
-              (if (<= delta 1e-4)
+              (setq yrEff (ali:get-effective-y-range ent))
+              (if yr
                 (progn
-                  (setq ali:*last-reason* "target-no-supera-top")
+                  (setq botCandidates (cons (car yr) botCandidates))
+                  (setq topCandidates (cons (cadr yr) topCandidates))
+                )
+              )
+              (if yrEff
+                (progn
+                  (setq botCandidates (cons (car yrEff) botCandidates))
+                  (setq topCandidates (cons (cadr yrEff) topCandidates))
+                )
+              )
+              ;; Bot robusto: el mas alto de candidatos (evita colas por debajo).
+              (setq botY (if botCandidates (apply 'max botCandidates) (cadr minp)))
+              ;; Top conservador: el mas bajo de candidatos (evita geometria parasita por arriba).
+              (setq topY (if topCandidates (apply 'min topCandidates) (cadr maxp)))
+              ;; Si existe propiedad de altura fiable, usarla como tope superior de seguridad.
+              (setq hVal (ali:get-height-value-for-ent ent))
+              (if (and hVal (> hVal 1e-8))
+                (setq topY (min topY (+ botY hVal))))
+              (if (<= topY botY)
+                (setq topY (if yr (cadr yr) (cadr maxp))))
+              (setq curSpan (- topY yIns))
+              (setq goalSpan (- targetY yIns))
+              (if (<= curSpan 1e-8)
+                (progn
+                  (setq ali:*last-reason* "altura-inicial-invalida")
+                  nil
+                )
+                (progn
+              (setq delta (- targetY topY))
+              (if (<= goalSpan (+ curSpan 1e-4))
+                (progn
+                  (setq ali:*last-reason*
+                         (strcat
+                           "target-no-supera-span"
+                           " spanCur=" (rtos curSpan 2 3)
+                           " spanGoal=" (rtos goalSpan 2 3)))
                   nil
                 )
                 (progn
                   (setq obj (vlax-ename->vla-object ent))
                   (setq ok nil)
-                  ;; Orden: dynprop -> objprop -> yscale.
-                  (if (ali:try-dyn-height ent obj delta botY targetY)
+                  ;; LusoCAD 2025: yscale suele ser mas estable.
+                  ;; Fallback: dynprop -> objprop.
+                  (if (ali:try-yscale ent obj x yIns botY topY targetY)
                     (setq ok T)
-                    (if (ali:try-obj-height ent delta botY targetY)
+                    (if (ali:try-dyn-height ent obj x yIns delta botY targetY)
                       (setq ok T)
-                      (if (ali:try-yscale ent obj botY oldH targetY)
+                      (if (ali:try-obj-height ent x yIns delta botY targetY)
                         (setq ok T)
                         (setq ali:*last-reason* "no-se-pudo-ajustar")
                       )
@@ -944,12 +1057,14 @@
                   ok
                 )
               )
+                )
             )
           )
         )
       )
     )
   )
+)
 )
 
 (defun ali:run-stretch (/ refs ss i ent ok skip tryres)
