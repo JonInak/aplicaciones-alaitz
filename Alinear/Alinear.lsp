@@ -1,190 +1,1182 @@
-;|
-  ALINEAR para LusoCAD/AutoCAD
-  ----------------------------
-  Alinea el punto base/insercion de objetos seleccionados sobre una linea/curva.
-
-  Flujo:
-    1) Seleccionar linea o curva de referencia.
-    2) Seleccionar columnas/objetos a alinear.
-|;
-
+;; ALINEAR / ESTIRAR columnas sobre referencias
+;; - ESTIRARCOL: estira cada INSERT hasta tocar referencia por arriba.
+;; - ALINEARCOL: mueve la insercion Y del INSERT hasta la referencia.
 (vl-load-com)
 
-;; Convierte un punto 2D/3D a una lista 3D.
+;; ------------------------------------------------------------
+;; Utilidades base
+;; ------------------------------------------------------------
 (defun ali:as-3d (pt)
   (cond
-    ((and pt (= 2 (length pt))) (list (car pt) (cadr pt) 0.0))
-    ((and pt (= 3 (length pt))) pt)
+    ((and pt (= (length pt) 2)) (list (car pt) (cadr pt) 0.0))
+    ((and pt (= (length pt) 3)) pt)
     (T nil)
   )
 )
 
-;; Punto medio entre dos puntos 3D.
-(defun ali:midpoint (a b)
-  (mapcar '(lambda (x y) (/ (+ x y) 2.0)) a b)
-)
-
-;; Valida tipos permitidos como referencia.
-(defun ali:is-valid-ref-p (ent / typ)
-  (setq typ (cdr (assoc 0 (entget ent))))
-  (member typ '("LINE" "LWPOLYLINE" "POLYLINE" "ARC" "SPLINE"))
-)
-
-;; Verifica formato de punto numerico 2D/3D.
 (defun ali:point-p (pt)
   (and (listp pt)
        (>= (length pt) 2)
        (numberp (car pt))
-       (numberp (cadr pt))
-       (or (= (length pt) 2)
-           (numberp (caddr pt)))
-  )
+       (numberp (cadr pt)))
 )
 
-;; Magnitud de vector 3D.
-(defun ali:vec-length (v)
-  (sqrt (+ (* (car v) (car v))
-           (* (cadr v) (cadr v))
-           (* (caddr v) (caddr v))
-        )
-  )
-)
-
-;; Seleccion unica de referencia con filtro de entidades validas.
-(defun ali:select-ref (/ pick ent)
-  (while (and (not ent)
-              (setq pick (entsel "\nLinea/curva de referencia: ")))
-    (if (ali:is-valid-ref-p (car pick))
-      (setq ent (car pick))
-      (princ "\nEntidad no valida. Seleccione LINE/POLYLINE/ARC/SPLINE.")
-    )
-  )
-  ent
-)
-
-;; Obtiene el punto base para alinear:
-;; - Si existe grupo 10, usa ese punto.
-;; - Si no, usa el centro de la caja envolvente como fallback.
-(defun ali:get-base-point (ent / elst obj minp maxp)
-  (setq elst (entget ent))
+(defun ali:to-number (v / raw)
   (cond
-    ((assoc 10 elst)
-     (ali:as-3d (cdr (assoc 10 elst)))
-    )
-    (T
-     (setq obj (vlax-ename->vla-object ent))
-     (if (vlax-method-applicable-p obj 'GetBoundingBox)
-       (progn
-         (vla-GetBoundingBox obj 'minp 'maxp)
-         (setq minp (vlax-safearray->list (vlax-variant-value minp))
-               maxp (vlax-safearray->list (vlax-variant-value maxp))
-         )
-         (ali:midpoint minp maxp)
-       )
-     )
+    ((numberp v) (float v))
+    ((= (type v) 'VARIANT)
+     (setq raw (vlax-variant-value v))
+     (if (numberp raw) (float raw))
     )
   )
 )
 
-;; Proyecta un punto sobre una curva de referencia.
-(defun ali:get-nearest-on-curve (curve pt / obj res)
-  (setq obj (if (= (type curve) 'ENAME) (vlax-ename->vla-object curve) curve))
-  (setq res (vl-catch-all-apply 'vlax-curve-getClosestPointTo (list obj pt)))
-  (if (vl-catch-all-error-p res)
-    nil
-    (cond
-      ((listp res) (ali:as-3d res))
-      ((= (type res) 'VARIANT) (ali:as-3d (vlax-safearray->list (vlax-variant-value res))))
-      ((= (type res) 'SAFEARRAY) (ali:as-3d (vlax-safearray->list res)))
-      (T nil)
-    )
-  )
-)
-
-;; Mueve una entidad por un vector. Retorna T si pudo mover.
-(defun ali:move-entity-by (ent vec / obj res)
-  (setq obj (vlax-ename->vla-object ent))
-  (setq res
-         (vl-catch-all-apply
-           'vla-Move
-           (list obj (vlax-3d-point '(0.0 0.0 0.0)) (vlax-3d-point vec))
-         )
-  )
-  (not (vl-catch-all-error-p res))
-)
-
-;; Alinea una entidad individual. Retorna T si se mueve.
-(defun ali:align-one (ref ent / base target vec)
-  (setq base (ali:get-base-point ent)
-        target (if base (ali:get-nearest-on-curve ref base))
-  )
-  (if (and (ali:point-p base) (ali:point-p target))
+(defun ali:str-contains-ci (txt needle / ut un)
+  (if (and txt needle)
     (progn
-      (setq vec (mapcar '- target base))
-      (if (> (ali:vec-length vec) 1e-9)
-        (ali:move-entity-by ent vec)
+      (setq ut (strcase txt)
+            un (strcase needle))
+      (not (null (vl-string-search un ut)))
+    )
+  )
+)
+
+(defun ali:get-bbox (ent / obj minp maxp r)
+  (setq obj (vlax-ename->vla-object ent))
+  (if (vlax-method-applicable-p obj 'GetBoundingBox)
+    (progn
+      (setq r (vl-catch-all-apply 'vla-GetBoundingBox (list obj 'minp 'maxp)))
+      (if (not (vl-catch-all-error-p r))
+        (list
+          (vlax-safearray->list (vlax-variant-value minp))
+          (vlax-safearray->list (vlax-variant-value maxp))
+        )
       )
     )
   )
 )
 
-(defun ali:run (/ ref ss i ent moved skipped tryres)
-  (princ "\nSeleccione linea/curva de referencia.")
-  (setq ref (ali:select-ref))
+(defun ali:get-top-y (ent / bb)
+  (setq bb (ali:get-bbox ent))
+  (if bb (cadr (cadr bb)))
+)
 
-  (if (not ref)
+(defun ali:get-bot-y (ent / bb)
+  (setq bb (ali:get-bbox ent))
+  (if bb (cadr (car bb)))
+)
+
+(defun ali:variant->points (v / raw lst pts)
+  (setq raw
+         (cond
+           ((= (type v) 'VARIANT) (vlax-variant-value v))
+           ((= (type v) 'SAFEARRAY) v)
+         ))
+  (if (= (type raw) 'SAFEARRAY)
+    (progn
+      (setq lst (vlax-safearray->list raw))
+      (while (>= (length lst) 3)
+        (setq pts (cons (list (car lst) (cadr lst) (caddr lst)) pts)
+              lst (cdddr lst))
+      )
+      (reverse pts)
+    )
+  )
+)
+
+;; Lista de Y por interseccion de una vertical X con el INSERT.
+(defun ali:get-insert-ys-at-x (ent x / obj bb minp maxp ms ln p1 p2 ip pts ys)
+  (setq obj (vlax-ename->vla-object ent))
+  (setq bb (ali:get-bbox ent))
+  (if bb
+    (progn
+      (setq minp (car bb)
+            maxp (cadr bb))
+      (setq ms (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))
+      (setq p1 (list x (- (cadr minp) 1000.0) 0.0)
+            p2 (list x (+ (cadr maxp) 1000.0) 0.0))
+      (setq ln
+             (vl-catch-all-apply
+               'vla-AddLine
+               (list ms (vlax-3d-point p1) (vlax-3d-point p2))))
+      (if (vl-catch-all-error-p ln)
+        nil
+        (progn
+          (setq ip (vl-catch-all-apply 'vla-IntersectWith (list ln obj 0)))
+          (vl-catch-all-apply 'vla-Delete (list ln))
+          (if (vl-catch-all-error-p ip)
+            nil
+            (progn
+              (setq pts (ali:variant->points ip))
+              (foreach p pts
+                (setq ys (cons (cadr p) ys))
+              )
+              ys
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+;; Rango Y (min max) por interseccion de una vertical con el INSERT.
+(defun ali:get-insert-y-range-at-x (ent x / bb ys)
+  (setq bb (ali:get-bbox ent))
+  (if bb
+    (progn
+      (setq ys (ali:get-insert-ys-at-x ent x))
+      (if ys
+        (list (apply 'min ys) (apply 'max ys))
+        (list (cadr (car bb)) (cadr (cadr bb)))
+      )
+    )
+  )
+)
+
+;; Rango Y util tomando la interseccion mas cercana por arriba/abajo del punto de insercion.
+;; Evita coger geometria "parasita" de bloques dinamicos.
+(defun ali:get-insert-core-y-range-at-x (ent x yIns / ys up dn tol top bot)
+  (setq ys (ali:get-insert-ys-at-x ent x)
+        tol 1e-6)
+  (if ys
+    (progn
+      (foreach y ys
+        (if (> y (+ yIns tol)) (setq up (cons y up)))
+        (if (< y (- yIns tol)) (setq dn (cons y dn)))
+      )
+      (setq top (if up (apply 'min up) (apply 'max ys))
+            bot (if dn (apply 'max dn) (apply 'min ys)))
+      (if (> top bot)
+        (list bot top)
+      )
+    )
+  )
+)
+
+(defun ali:get-insert-top-at-x (ent x / yr)
+  (setq yr (ali:get-insert-y-range-at-x ent x))
+  (if yr (cadr yr))
+)
+
+(defun ali:get-insert-bot-at-x (ent x / yr)
+  (setq yr (ali:get-insert-y-range-at-x ent x))
+  (if yr (car yr))
+)
+
+(defun ali:sort-nums (vals)
+  (vl-sort vals '<)
+)
+
+(defun ali:median-nums (vals / s n)
+  (if vals
+    (progn
+      (setq s (ali:sort-nums vals)
+            n (length s))
+      (if (= (rem n 2) 1)
+        (nth (/ n 2) s)
+        (/ (+ (nth (1- (/ n 2)) s)
+              (nth (/ n 2) s))
+           2.0)
+      )
+    )
+  )
+)
+
+;; Rango Y "efectivo" del INSERT robusto frente a geometria oculta:
+;; usa la vecindad del punto de insercion y medianas.
+(defun ali:get-effective-y-range (ent / bb ed ins minp maxp minx maxx w x0 y0 xs x yr bots tops fallback)
+  (setq bb (ali:get-bbox ent))
+  (if bb
+    (progn
+      (setq ed (entget ent)
+            ins (ali:as-3d (cdr (assoc 10 ed))))
+      (setq minp (car bb)
+            maxp (cadr bb)
+            minx (car minp)
+            maxx (car maxp)
+            w (- maxx minx))
+      (setq x0 (if ins (car ins) (/ (+ minx maxx) 2.0))
+            y0 (if ins (cadr ins) (/ (+ (cadr minp) (cadr maxp)) 2.0)))
+      (setq xs
+             (if (> w 1e-6)
+               (list (- x0 (* w 0.10))
+                     x0
+                     (+ x0 (* w 0.10)))
+               (list x0)))
+      (foreach x xs
+        (setq yr (ali:get-insert-core-y-range-at-x ent x y0))
+        (if yr
+          (progn
+            (setq bots (cons (car yr) bots))
+            (setq tops (cons (cadr yr) tops))
+          )
+        )
+      )
+      (setq fallback (ali:get-insert-y-range-at-x ent x0))
+      (if (and bots tops)
+        (list (ali:median-nums bots) (ali:median-nums tops))
+        (if fallback
+          fallback
+          (list (cadr minp) (cadr maxp))
+        )
+      )
+    )
+  )
+)
+
+;; Rango (bot top) de la "pieza vertical principal" respecto a insercion/objetivo.
+;; - top: interseccion mas alta por debajo del objetivo (evita geometria por encima).
+;; - bot: interseccion mas cercana por debajo de la insercion.
+(defun ali:get-insert-range-for-target (ent x yIns yTarget / ys tol belowTarget belowIns top bot)
+  (setq ys (ali:get-insert-ys-at-x ent x)
+        tol 1e-6)
+  (if ys
+    (progn
+      (foreach y ys
+        (if (<= y (+ yTarget tol))
+          (setq belowTarget (cons y belowTarget)))
+        (if (< y (- yIns tol))
+          (setq belowIns (cons y belowIns)))
+      )
+      (setq top (if belowTarget (apply 'max belowTarget) (apply 'max ys))
+            bot (if belowIns (apply 'max belowIns) (apply 'min ys)))
+      (if (> top bot)
+        (list bot top)
+      )
+    )
+  )
+)
+
+;; Altura "real" de bloque segun propiedades (dinamica u objeto).
+(defun ali:get-height-value-for-ent (ent / obj d o v)
+  (setq obj (vlax-ename->vla-object ent))
+  (setq d (ali:get-dyn-height-prop obj))
+  (setq v (if d (cadr d)))
+  (if (or (not v) (<= v 1e-8))
+    (progn
+      (setq o (ali:get-obj-height-prop ent))
+      (setq v (if o (cadr o)))
+    )
+  )
+  (if (and v (> v 1e-8)) v)
+)
+
+(defun ali:move-by (ent vec / obj r)
+  (setq obj (vlax-ename->vla-object ent))
+  (setq r
+         (vl-catch-all-apply
+           'vla-Move
+           (list obj (vlax-3d-point '(0.0 0.0 0.0)) (vlax-3d-point vec))
+         ))
+  (not (vl-catch-all-error-p r))
+)
+
+(defun ali:lock-bottom (ent botY / bb newBot dy)
+  (setq bb (ali:get-bbox ent))
+  (if bb
+    (progn
+      (setq newBot (cadr (car bb))
+            dy (- botY newBot))
+      (if (> (abs dy) 1e-9)
+        (ali:move-by ent (list 0.0 dy 0.0))
+      )
+    )
+  )
+)
+
+;; ------------------------------------------------------------
+;; Referencia: Y objetivo por interseccion vertical en X
+;; ------------------------------------------------------------
+(defun ali:get-nearest-on-curve (curve pt / obj r)
+  (setq obj (if (= (type curve) 'ENAME) (vlax-ename->vla-object curve) curve))
+  (setq r (vl-catch-all-apply 'vlax-curve-getClosestPointTo (list obj pt)))
+  (if (vl-catch-all-error-p r)
+    nil
+    (cond
+      ((listp r) (ali:as-3d r))
+      ((= (type r) 'VARIANT) (ali:as-3d (vlax-safearray->list (vlax-variant-value r))))
+      ((= (type r) 'SAFEARRAY) (ali:as-3d (vlax-safearray->list r)))
+      (T nil)
+    )
+  )
+)
+
+(defun ali:segment-y-candidates (x p1 p2 / x1 y1 x2 y2 tval tol)
+  (setq x1 (car p1)
+        y1 (cadr p1)
+        x2 (car p2)
+        y2 (cadr p2)
+        tol 1e-9)
+  (cond
+    ((< (abs (- x2 x1)) tol)
+     (if (< (abs (- x x1)) 1e-6) (list y1 y2))
+    )
+    ((and (<= (- (min x1 x2) 1e-6) x) (<= x (+ (max x1 x2) 1e-6)))
+     (setq tval (/ (- x x1) (- x2 x1)))
+     (list (+ y1 (* tval (- y2 y1))))
+    )
+  )
+)
+
+(defun ali:get-lwpoly-verts (el / verts)
+  (foreach d el
+    (if (= (car d) 10)
+      (setq verts (append verts (list (ali:as-3d (cdr d)))))
+    )
+  )
+  verts
+)
+
+(defun ali:get-poly-verts (ent / nx ed verts)
+  (setq nx (entnext ent))
+  (while nx
+    (setq ed (entget nx))
+    (cond
+      ((= (cdr (assoc 0 ed)) "VERTEX")
+       (setq verts (append verts (list (ali:as-3d (cdr (assoc 10 ed))))))
+       (setq nx (entnext nx))
+      )
+      ((= (cdr (assoc 0 ed)) "SEQEND")
+       (setq nx nil)
+      )
+      (T
+       (setq nx (entnext nx))
+      )
+    )
+  )
+  verts
+)
+
+(defun ali:ref-ys-at-x-one (ref x / el typ verts closed ys i p1 p2)
+  (setq el (entget ref)
+        typ (cdr (assoc 0 el)))
+  (cond
+    ((= typ "LINE")
+     (ali:segment-y-candidates
+       x
+       (ali:as-3d (cdr (assoc 10 el)))
+       (ali:as-3d (cdr (assoc 11 el)))
+     )
+    )
+    ((= typ "LWPOLYLINE")
+     (setq verts (ali:get-lwpoly-verts el)
+           closed (not (zerop (logand 1 (cdr (assoc 70 el)))))
+           i 0)
+     (repeat (max 0 (1- (length verts)))
+       (setq p1 (nth i verts)
+             p2 (nth (1+ i) verts)
+             ys (append ys (ali:segment-y-candidates x p1 p2))
+             i (1+ i))
+     )
+     (if (and closed (> (length verts) 2))
+       (setq ys
+              (append ys
+                      (ali:segment-y-candidates x (car (last verts)) (car verts))))
+     )
+     ys
+    )
+    ((= typ "POLYLINE")
+     (setq verts (ali:get-poly-verts ref)
+           closed (not (zerop (logand 1 (cdr (assoc 70 el)))))
+           i 0)
+     (repeat (max 0 (1- (length verts)))
+       (setq p1 (nth i verts)
+             p2 (nth (1+ i) verts)
+             ys (append ys (ali:segment-y-candidates x p1 p2))
+             i (1+ i))
+     )
+     (if (and closed (> (length verts) 2))
+       (setq ys
+              (append ys
+                      (ali:segment-y-candidates x (car (last verts)) (car verts))))
+     )
+     ys
+    )
+  )
+)
+
+(defun ali:pick-y (ys hintY onlyAbove / tol best bestD d)
+  (setq tol 1e-6)
+  (if onlyAbove
+    (progn
+      (foreach y ys
+        (if (>= y (- hintY tol))
+          (if (or (not best) (< y best))
+            (setq best y)
+          )
+        )
+      )
+      best
+    )
+    (progn
+      (foreach y ys
+        (setq d (abs (- y hintY)))
+        (if (or (not bestD) (< d bestD))
+          (setq best y
+                bestD d)
+        )
+      )
+      best
+    )
+  )
+)
+
+(defun ali:get-target-y (refs x hintY onlyAbove / ys i ref typ cand p)
+  (if refs
+    (progn
+      (setq i 0)
+      (repeat (sslength refs)
+        (setq ref (ssname refs i)
+              typ (cdr (assoc 0 (entget ref)))
+              cand (ali:ref-ys-at-x-one ref x))
+        (if cand
+          (setq ys (append cand ys))
+          (if (or (= typ "ARC") (= typ "SPLINE"))
+            (progn
+              (setq p (ali:get-nearest-on-curve ref (list x hintY 0.0)))
+              (if (ali:point-p p)
+                (setq ys (cons (cadr p) ys))
+              )
+            )
+          )
+        )
+        (setq i (1+ i))
+      )
+      (if ys
+        (ali:pick-y ys hintY onlyAbove)
+      )
+    )
+  )
+)
+
+;; ------------------------------------------------------------
+;; Diagnostico geometrico (paso 1)
+;; ------------------------------------------------------------
+(defun ali:pt->str (p)
+  (strcat
+    "("
+    (rtos (car p) 2 3) ", "
+    (rtos (cadr p) 2 3) ", "
+    (rtos (caddr (ali:as-3d p)) 2 3)
+    ")"
+  )
+)
+
+(defun ali:print-ref-coords-one (ref / el typ p1 p2 verts closed i)
+  (setq el (entget ref)
+        typ (cdr (assoc 0 el)))
+  (princ (strcat "\n--- Referencia " typ " ---"))
+  (cond
+    ((= typ "LINE")
+     (setq p1 (ali:as-3d (cdr (assoc 10 el)))
+           p2 (ali:as-3d (cdr (assoc 11 el))))
+     (princ (strcat "\n  P1: " (ali:pt->str p1)))
+     (princ (strcat "\n  P2: " (ali:pt->str p2)))
+    )
+    ((= typ "LWPOLYLINE")
+     (setq verts (ali:get-lwpoly-verts el)
+           closed (not (zerop (logand 1 (cdr (assoc 70 el)))))
+           i 0)
+     (foreach v verts
+       (princ (strcat "\n  V" (itoa i) ": " (ali:pt->str v)))
+       (setq i (1+ i))
+     )
+     (princ
+       (strcat
+         "\n  Segmentos: "
+         (itoa (if closed (length verts) (max 0 (1- (length verts)))))
+       )
+     )
+    )
+    ((= typ "POLYLINE")
+     (setq verts (ali:get-poly-verts ref)
+           closed (not (zerop (logand 1 (cdr (assoc 70 el)))))
+           i 0)
+     (foreach v verts
+       (princ (strcat "\n  V" (itoa i) ": " (ali:pt->str v)))
+       (setq i (1+ i))
+     )
+     (princ
+       (strcat
+         "\n  Segmentos: "
+         (itoa (if closed (length verts) (max 0 (1- (length verts)))))
+       )
+     )
+    )
+    ((or (= typ "ARC") (= typ "SPLINE"))
+     (setq p1 (vl-catch-all-apply 'vlax-curve-getStartPoint (list ref)))
+     (setq p2 (vl-catch-all-apply 'vlax-curve-getEndPoint (list ref)))
+     (if (not (vl-catch-all-error-p p1))
+       (princ (strcat "\n  Start: " (ali:pt->str p1)))
+     )
+     (if (not (vl-catch-all-error-p p2))
+       (princ (strcat "\n  End:   " (ali:pt->str p2)))
+     )
+    )
+  )
+)
+
+(defun ali:add-debug-line (p1 p2 colorIndex / ms ln)
+  (setq ms (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))
+  (setq ln
+         (vl-catch-all-apply
+           'vla-AddLine
+           (list ms (vlax-3d-point (ali:as-3d p1)) (vlax-3d-point (ali:as-3d p2)))))
+  (if (vl-catch-all-error-p ln)
+    nil
+    (progn
+      (if (vlax-property-available-p ln 'Color T)
+        (vl-catch-all-apply 'vla-put-Color (list ln (if colorIndex colorIndex 3)))
+      )
+      T
+    )
+  )
+)
+
+(defun ali:get-target-y-nearest-on-refs (refs probe / i ref p d bestY bestD)
+  (if refs
+    (progn
+      (setq i 0)
+      (repeat (sslength refs)
+        (setq ref (ssname refs i)
+              p (ali:get-nearest-on-curve ref probe))
+        (if (ali:point-p p)
+          (progn
+            (setq d (abs (- (cadr p) (cadr probe))))
+            (if (or (not bestD) (< d bestD))
+              (setq bestD d
+                    bestY (cadr p))
+            )
+          )
+        )
+        (setq i (1+ i))
+      )
+      bestY
+    )
+  )
+)
+
+(defun ali:draw-dbg-ray-one (refs ent / ed typ bb minp maxp yr botY topY hVal xMid yMid ins xProbe yIns targetUp targetAny targetNear targetY col pTop pTar)
+  (setq ed (entget ent)
+        typ (cdr (assoc 0 ed)))
+  (if (/= typ "INSERT")
+    (progn
+      (setq ali:*last-reason* "no-es-insert")
+      nil
+    )
+    (progn
+      (setq bb (ali:get-bbox ent))
+      (if (not bb)
+        (progn
+          (setq ali:*last-reason* "sin-bbox")
+          nil
+        )
+        (progn
+          (setq minp (car bb)
+                maxp (cadr bb)
+                xMid (/ (+ (car minp) (car maxp)) 2.0)
+                yMid (/ (+ (cadr minp) (cadr maxp)) 2.0)
+                ins (ali:as-3d (cdr (assoc 10 ed)))
+                xProbe (if ins (car ins) xMid)
+                yIns (if ins (cadr ins) yMid))
+          (setq targetUp (ali:get-target-y refs xProbe yIns T))
+          (setq targetAny (if targetUp nil (ali:get-target-y refs xProbe yIns nil)))
+          (setq targetNear (if (or targetUp targetAny) nil
+                             (ali:get-target-y-nearest-on-refs refs (list xProbe yIns 0.0))))
+          (setq targetY (cond (targetUp) (targetAny) (targetNear)))
+          (setq col (cond (targetUp 3) (targetAny 1) (targetNear 2)))
+          (setq yr (if targetY
+                     (ali:get-insert-range-for-target ent xProbe yIns targetY)
+                     nil))
+          (if (not yr) (setq yr (ali:get-effective-y-range ent)))
+          (setq botY (if yr (car yr) (cadr minp)))
+          (setq hVal (ali:get-height-value-for-ent ent))
+          (setq topY (if hVal
+                       (+ botY hVal)
+                       (if yr (cadr yr) (cadr maxp))))
+          (if (not targetY)
+            (progn
+              (setq ali:*last-reason*
+                     (strcat
+                       "sin-target"
+                       " x=" (rtos xProbe 2 3)
+                       " yIns=" (rtos yIns 2 3)))
+              nil
+            )
+            (progn
+              (setq pTop (list xProbe topY 0.0)
+                    pTar (list xProbe targetY 0.0))
+              (if (ali:add-debug-line pTop pTar col)
+                (progn
+                  (setq ali:*last-reason*
+                         (strcat
+                           "x=" (rtos xProbe 2 3)
+                           " xMid=" (rtos xMid 2 3)
+                           " yIns=" (rtos yIns 2 3)
+                           " bot=" (rtos botY 2 3)
+                           " top=" (rtos topY 2 3)
+                           (if hVal (strcat " hVal=" (rtos hVal 2 3)) "")
+                           " target=" (rtos targetY 2 3)
+                           (cond
+                             (targetUp " [up]")
+                             (targetAny " [down]")
+                             (targetNear " [nearest]"))))
+                  T
+                )
+                (progn
+                  (setq ali:*last-reason* "error-dibujando-linea")
+                  nil
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+;; ------------------------------------------------------------
+;; Metodos para modificar altura
+;; ------------------------------------------------------------
+(defun ali:get-dynprops-list (obj / r raw)
+  (setq r (vl-catch-all-apply 'vlax-invoke (list obj 'GetDynamicBlockProperties)))
+  (if (vl-catch-all-error-p r)
+    nil
+    (cond
+      ((listp r) r)
+      ((= (type r) 'VARIANT)
+       (setq raw (vlax-variant-value r))
+       (if (= (type raw) 'SAFEARRAY) (vlax-safearray->list raw))
+      )
+      ((= (type r) 'SAFEARRAY) (vlax-safearray->list r))
+    )
+  )
+)
+
+(defun ali:get-dyn-height-prop (obj / props p pn pv nv exact partial any)
+  (setq props (ali:get-dynprops-list obj))
+  (if (not props)
+    nil
+    (progn
+      (foreach p props
+        (setq pn (vl-catch-all-apply 'vla-get-PropertyName (list p)))
+        (if (not (vl-catch-all-error-p pn))
+          (progn
+            (setq pv (vl-catch-all-apply 'vlax-get (list p 'Value)))
+            (setq nv (if (vl-catch-all-error-p pv) nil (ali:to-number pv)))
+            (if nv
+              (cond
+                ((or (= (strcase pn) "ALTURA")
+                     (= (strcase pn) "HEIGHT")
+                     (= (strcase pn) "DISTANCE")
+                     (= (strcase pn) "DISTANCE1"))
+                 (if (not exact)
+                   (setq exact (list p nv pn))
+                 ))
+                ((or (ali:str-contains-ci pn "ALTURA")
+                     (ali:str-contains-ci pn "HEIGHT")
+                     (ali:str-contains-ci pn "DISTANCE"))
+                 (if (not partial)
+                   (setq partial (list p nv pn))
+                 ))
+                (T
+                 (if (not any)
+                   (setq any (list p nv pn))
+                 ))
+              )
+            )
+          )
+        )
+      )
+      (cond (exact) (partial) (any))
+    )
+  )
+)
+
+(defun ali:set-dyn-prop-number (prop val / ro cur typ r)
+  (if prop
+    (progn
+      (setq ro (vl-catch-all-apply 'vlax-get (list prop 'ReadOnly)))
+      (if (and (not (vl-catch-all-error-p ro)) (= ro :vlax-true))
+        nil
+        (progn
+          (setq cur (vl-catch-all-apply 'vla-get-Value (list prop)))
+          (if (vl-catch-all-error-p cur)
+            nil
+            (progn
+              (setq typ (if (= (type cur) 'VARIANT)
+                          (vlax-variant-type cur)
+                          (vlax-variant-type (vlax-make-variant cur))))
+              (setq r
+                     (vl-catch-all-apply
+                       'vla-put-Value
+                       (list prop (vlax-make-variant val typ))))
+              (not (vl-catch-all-error-p r))
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(defun ali:get-obj-height-prop (ent / names nm v n out)
+  (setq names '("Altura" "ALTURA" "Height" "HEIGHT" "Distance" "DISTANCE" "Distance1" "DISTANCE1"))
+  (if (fboundp 'getpropertyvalue)
+    (while (and names (not out))
+      (setq nm (car names))
+      (setq v (vl-catch-all-apply 'getpropertyvalue (list ent nm)))
+      (setq n (if (vl-catch-all-error-p v) nil (ali:to-number v)))
+      (if n
+        (setq out (list nm n))
+      )
+      (setq names (cdr names))
+    )
+  )
+  out
+)
+
+(defun ali:set-obj-prop-number (ent pname val / r)
+  (if (fboundp 'setpropertyvalue)
+    (progn
+      (setq r (vl-catch-all-apply 'setpropertyvalue (list ent pname val)))
+      (not (vl-catch-all-error-p r))
+    )
+  )
+)
+
+(defun ali:set-yscale (obj val / r)
+  (setq r (vl-catch-all-apply 'vla-put-yscalefactor (list obj val)))
+  (not (vl-catch-all-error-p r))
+)
+
+(defun ali:verify-top (ent targetY tol / top)
+  (setq top (ali:get-top-y ent))
+  (if (and top (<= (abs (- top targetY)) tol))
+    T
+  )
+)
+
+(defun ali:try-dyn-height (ent obj delta botY targetY / c prop v0 v1 topNow)
+  (setq c (ali:get-dyn-height-prop obj))
+  (if c
+    (progn
+      (setq prop (car c)
+            v0 (cadr c))
+      (setq v1 (+ v0 delta))
+      (if (> v1 1e-6)
+        (if (ali:set-dyn-prop-number prop v1)
+          (progn
+            (ali:lock-bottom ent botY)
+            (if (not (ali:verify-top ent targetY 0.05))
+              (progn
+                ;; segunda pasada correctiva
+                (setq topNow (ali:get-top-y ent))
+                (if topNow
+                  (progn
+                    (setq v1 (+ v1 (- targetY topNow)))
+                    (if (> v1 1e-6)
+                      (if (ali:set-dyn-prop-number prop v1)
+                        (ali:lock-bottom ent botY)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+            (if (ali:verify-top ent targetY 0.08)
+              (progn
+                (setq ali:*last-reason* (strcat "ok-dynprop:" (caddr c)))
+                T
+              )
+              (setq ali:*last-reason* (strcat "dynprop-no-ajusta:" (caddr c)))
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(defun ali:try-obj-height (ent delta botY targetY / c pname v0 v1 topNow)
+  (setq c (ali:get-obj-height-prop ent))
+  (if c
+    (progn
+      (setq pname (car c)
+            v0 (cadr c))
+      (setq v1 (+ v0 delta))
+      (if (> v1 1e-6)
+        (if (ali:set-obj-prop-number ent pname v1)
+          (progn
+            (ali:lock-bottom ent botY)
+            (if (not (ali:verify-top ent targetY 0.05))
+              (progn
+                ;; segunda pasada correctiva
+                (setq topNow (ali:get-top-y ent))
+                (if topNow
+                  (progn
+                    (setq v1 (+ v1 (- targetY topNow)))
+                    (if (> v1 1e-6)
+                      (if (ali:set-obj-prop-number ent pname v1)
+                        (ali:lock-bottom ent botY)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+            (if (ali:verify-top ent targetY 0.08)
+              (progn
+                (setq ali:*last-reason* (strcat "ok-objprop:" pname))
+                T
+              )
+              (setq ali:*last-reason* (strcat "objprop-no-ajusta:" pname))
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(defun ali:try-yscale (ent obj botY oldH targetY / ys sign absS newH newScale)
+  (if (and (> oldH 1e-8) (vlax-property-available-p obj 'YScaleFactor T))
+    (progn
+      (setq ys (vla-get-yscalefactor obj)
+            sign (if (< ys 0.0) -1.0 1.0)
+            absS (max 1e-6 (abs ys))
+            newH (- targetY botY))
+      (if (> newH 1e-8)
+        (progn
+          (setq newScale (* sign (* absS (/ newH oldH))))
+          (if (ali:set-yscale obj newScale)
+            (progn
+              (ali:lock-bottom ent botY)
+              (if (ali:verify-top ent targetY 0.08)
+                (progn
+                  (setq ali:*last-reason* "ok-yscale")
+                  T
+                )
+                (setq ali:*last-reason* "yscale-no-ajusta")
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+;; ------------------------------------------------------------
+;; ESTIRARCOL
+;; ------------------------------------------------------------
+(defun ali:stretch-one (refs ent / ed typ ins x yIns bb yr botY topY oldH hVal targetY targetAny delta obj ok minp maxp xMid yMid)
+  (setq ali:*last-reason* "sin-detalle")
+  (setq ed (entget ent)
+        typ (cdr (assoc 0 ed)))
+  (if (/= typ "INSERT")
+    (progn
+      (setq ali:*last-reason* "no-es-insert")
+      nil
+    )
+    (progn
+      (setq ins (ali:as-3d (cdr (assoc 10 ed))))
+      (setq bb (ali:get-bbox ent))
+      (if (not (and (ali:point-p ins) bb))
+        (progn
+          (setq ali:*last-reason* "sin-ins-o-bbox")
+          nil
+        )
+        (progn
+          (setq x (car ins))
+          (setq minp (car bb)
+                maxp (cadr bb)
+                xMid (/ (+ (car minp) (car maxp)) 2.0)
+                yMid (/ (+ (cadr minp) (cadr maxp)) 2.0)
+                yIns (if ins (cadr ins) yMid))
+          (setq targetY (ali:get-target-y refs x yIns T))
+          (if (not targetY)
+            (progn
+              (setq targetAny (ali:get-target-y refs x yIns nil))
+              (setq ali:*last-reason*
+                     (strcat
+                       "sin-target-por-encima"
+                       " x=" (rtos x 2 3)
+                       " xMid=" (rtos xMid 2 3)
+                       " yIns=" (rtos yIns 2 3)
+                       (if targetAny
+                         (strcat " nearest=" (rtos targetAny 2 3))
+                         " nearest=nil")))
+              nil
+            )
+            (progn
+              (setq yr (ali:get-insert-range-for-target ent x yIns targetY))
+              (if (not yr) (setq yr (ali:get-effective-y-range ent)))
+              (setq botY (if yr (car yr) (cadr minp)))
+              (setq hVal (ali:get-height-value-for-ent ent))
+              (setq topY (if hVal
+                           (+ botY hVal)
+                           (if yr (cadr yr) (cadr maxp))))
+              (setq oldH (- topY botY))
+              (setq delta (- targetY topY))
+              (if (<= delta 1e-4)
+                (progn
+                  (setq ali:*last-reason* "target-no-supera-top")
+                  nil
+                )
+                (progn
+                  (setq obj (vlax-ename->vla-object ent))
+                  (setq ok nil)
+                  ;; Orden: dynprop -> objprop -> yscale.
+                  (if (ali:try-dyn-height ent obj delta botY targetY)
+                    (setq ok T)
+                    (if (ali:try-obj-height ent delta botY targetY)
+                      (setq ok T)
+                      (if (ali:try-yscale ent obj botY oldH targetY)
+                        (setq ok T)
+                        (setq ali:*last-reason* "no-se-pudo-ajustar")
+                      )
+                    )
+                  )
+                  ok
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(defun ali:run-stretch (/ refs ss i ent ok skip tryres)
+  (princ "\nSeleccione linea(s)/curva(s) de referencia y pulse ENTER: ")
+  (setq refs (ssget '((0 . "LINE,LWPOLYLINE,POLYLINE,ARC,SPLINE"))))
+  (if (not refs)
+    (progn
+      (princ "\nCancelado.")
+      (princ)
+    )
+    (progn
+      (princ "\nSeleccione columnas/objetos a estirar y pulse ENTER: ")
+      (setq ss (ssget))
+      (if (not ss)
+        (progn
+          (princ "\nNo se seleccionaron objetos.")
+          (princ)
+        )
+        (progn
+          (command "_.UNDO" "_BEGIN")
+          (setq i 0 ok 0 skip 0)
+          (repeat (sslength ss)
+            (setq ent (ssname ss i))
+            (setq ali:*last-reason* "sin-detalle")
+            (setq tryres (vl-catch-all-apply 'ali:stretch-one (list refs ent)))
+            (if (or (vl-catch-all-error-p tryres) (not tryres))
+              (progn
+                (setq skip (1+ skip))
+                (princ
+                  (strcat
+                    "\n  [SKIP "
+                    (itoa (1+ i))
+                    "] "
+                    (if (vl-catch-all-error-p tryres)
+                      (strcat "ERR: " (vl-catch-all-error-message tryres))
+                      ali:*last-reason*)))
+              )
+              (progn
+                (setq ok (1+ ok))
+                (princ
+                  (strcat
+                    "\n  [OK   "
+                    (itoa (1+ i))
+                    "] "
+                    ali:*last-reason*)))
+            )
+            (setq i (1+ i))
+          )
+          (command "_.UNDO" "_END")
+          (command "_.REGEN")
+          (princ
+            (strcat
+              "\nEstirado completado. Estirados: "
+              (itoa ok)
+              " | Sin cambios/no validos: "
+              (itoa skip)
+              "."))
+          (princ)
+        )
+      )
+    )
+  )
+)
+
+;; ------------------------------------------------------------
+;; ALINEARCOL
+;; ------------------------------------------------------------
+(defun ali:align-one (refs ent / ed typ ins x y targetY dy)
+  (setq ed (entget ent)
+        typ (cdr (assoc 0 ed)))
+  (if (/= typ "INSERT")
+    nil
+    (progn
+      (setq ins (ali:as-3d (cdr (assoc 10 ed))))
+      (if (not (ali:point-p ins))
+        nil
+        (progn
+          (setq x (car ins)
+                y (cadr ins))
+          ;; para alinear, usamos el punto mas cercano en Y.
+          (setq targetY (ali:get-target-y refs x y nil))
+          (if targetY
+            (progn
+              (setq dy (- targetY y))
+              (if (> (abs dy) 1e-6)
+                (ali:move-by ent (list 0.0 dy 0.0))
+                T
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(defun ali:run-align (/ refs ss i ent ok skip tryres)
+  (princ "\nSeleccione linea(s)/curva(s) de referencia y pulse ENTER: ")
+  (setq refs (ssget '((0 . "LINE,LWPOLYLINE,POLYLINE,ARC,SPLINE"))))
+  (if (not refs)
     (progn
       (princ "\nCancelado.")
       (princ)
     )
     (progn
       (princ "\nSeleccione columnas/objetos a alinear y pulse ENTER: ")
-      (if (setq ss (ssget))
+      (setq ss (ssget))
+      (if (not ss)
         (progn
-          ;; Nunca mover la linea de referencia aunque se incluya por error.
-          (if (ssmemb ref ss)
-            (setq ss (ssdel ref ss))
-          )
-
+          (princ "\nNo se seleccionaron objetos.")
+          (princ)
+        )
+        (progn
           (command "_.UNDO" "_BEGIN")
-          (setq i 0
-                moved 0
-                skipped 0
-          )
+          (setq i 0 ok 0 skip 0)
           (repeat (sslength ss)
             (setq ent (ssname ss i))
-            (if (eq ent ref)
-              (setq skipped (1+ skipped))
-              (progn
-                (setq tryres (vl-catch-all-apply 'ali:align-one (list ref ent)))
-                (if (or (vl-catch-all-error-p tryres) (not tryres))
-                  (setq skipped (1+ skipped))
-                  (setq moved (1+ moved))
-                )
-              )
+            (setq tryres (vl-catch-all-apply 'ali:align-one (list refs ent)))
+            (if (or (vl-catch-all-error-p tryres) (not tryres))
+              (setq skip (1+ skip))
+              (setq ok (1+ ok))
             )
             (setq i (1+ i))
           )
           (command "_.UNDO" "_END")
+          (command "_.REGEN")
           (princ
             (strcat
               "\nAlineacion completada. Movidos: "
-              (itoa moved)
+              (itoa ok)
               " | Sin cambios/no validos: "
-              (itoa skipped)
-              "."
-            )
-          )
+              (itoa skip)
+              "."))
+          (princ)
         )
-        (princ "\nNo se seleccionaron objetos.")
       )
-      (princ)
     )
   )
 )
 
-(defun c:ALINEARCOL () (ali:run))
-(defun c:ALINEARPIL () (ali:run))
+(defun ali:run-refcoords (/ refs i ref)
+  (princ "\nSeleccione linea(s)/curva(s) de referencia y pulse ENTER: ")
+  (setq refs (ssget '((0 . "LINE,LWPOLYLINE,POLYLINE,ARC,SPLINE"))))
+  (if (not refs)
+    (princ "\nCancelado.")
+    (progn
+      (setq i 0)
+      (repeat (sslength refs)
+        (setq ref (ssname refs i))
+        (ali:print-ref-coords-one ref)
+        (setq i (1+ i))
+      )
+      (princ
+        (strcat
+          "\nTotal referencias listadas: "
+          (itoa (sslength refs))
+          "."))
+    )
+  )
+  (princ)
+)
 
-(princ "\nALINEAR cargado. Comandos: ALINEARCOL, ALINEARPIL")
+(defun ali:run-dbg-rays (/ refs ss i ent ok skip tryres)
+  (princ "\nSeleccione linea(s)/curva(s) de referencia y pulse ENTER: ")
+  (setq refs (ssget '((0 . "LINE,LWPOLYLINE,POLYLINE,ARC,SPLINE"))))
+  (if (not refs)
+    (progn
+      (princ "\nCancelado.")
+      (princ)
+    )
+    (progn
+      (princ "\nSeleccione columnas/objetos para rayas debug y pulse ENTER: ")
+      (setq ss (ssget))
+      (if (not ss)
+        (progn
+          (princ "\nNo se seleccionaron objetos.")
+          (princ)
+        )
+        (progn
+          (command "_.UNDO" "_BEGIN")
+          (setq i 0 ok 0 skip 0)
+          (repeat (sslength ss)
+            (setq ent (ssname ss i))
+            (setq ali:*last-reason* "sin-detalle")
+            (setq tryres (vl-catch-all-apply 'ali:draw-dbg-ray-one (list refs ent)))
+            (if (or (vl-catch-all-error-p tryres) (not tryres))
+              (progn
+                (setq skip (1+ skip))
+                (princ
+                  (strcat
+                    "\n  [SKIP "
+                    (itoa (1+ i))
+                    "] "
+                    (if (vl-catch-all-error-p tryres)
+                      (strcat "ERR: " (vl-catch-all-error-message tryres))
+                      ali:*last-reason*)))
+              )
+              (progn
+                (setq ok (1+ ok))
+                (princ
+                  (strcat
+                    "\n  [OK   "
+                    (itoa (1+ i))
+                    "] "
+                    ali:*last-reason*)))
+            )
+            (setq i (1+ i))
+          )
+          (command "_.UNDO" "_END")
+          (command "_.REGEN")
+          (princ
+            (strcat
+              "\nDebug completado. Rayas dibujadas: "
+              (itoa ok)
+              " | Sin objetivo/error: "
+              (itoa skip)
+              "."))
+          (princ)
+        )
+      )
+    )
+  )
+)
+
+(defun c:REFCOORDS () (ali:run-refcoords))
+(defun c:ESTIRARDBG () (ali:run-dbg-rays))
+(defun c:ESTIRARCOL () (ali:run-stretch))
+(defun c:ALINEARCOL () (ali:run-align))
+
+(princ "\nALINEAR cargado. Comandos: REFCOORDS, ESTIRARDBG, ALINEARCOL, ESTIRARCOL")
 (princ)
