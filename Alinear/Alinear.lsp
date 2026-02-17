@@ -1289,10 +1289,8 @@
   )
 )
 
-(defun c:REFCOORDS () (ali:run-refcoords))
-(defun c:ESTIRARDBG () (ali:run-dbg-rays))
 (defun c:ESTIRARCOL () (ali:run-stretch))
 (defun c:ALINEARCOL () (ali:run-align))
 
-(princ "\nALINEAR cargado. Comandos: REFCOORDS, ESTIRARDBG, ALINEARCOL, ESTIRARCOL")
+(princ "\nALINEAR cargado. Comandos: ALINEARCOL, ESTIRARCOL")
 (princ)
