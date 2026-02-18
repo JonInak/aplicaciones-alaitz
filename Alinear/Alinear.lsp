@@ -272,6 +272,24 @@
   (not (vl-catch-all-error-p r))
 )
 
+(defun ali:get-insert-y (ent / ed ins)
+  (setq ed (entget ent)
+        ins (cdr (assoc 10 ed)))
+  (if ins (cadr ins))
+)
+
+(defun ali:lock-insert-y (ent yRef / yNow dy)
+  (setq yNow (ali:get-insert-y ent))
+  (if (and yNow yRef)
+    (progn
+      (setq dy (- yRef yNow))
+      (if (> (abs dy) 1e-9)
+        (ali:move-by ent (list 0.0 dy 0.0))
+      )
+    )
+  )
+)
+
 (defun ali:lock-bottom (ent botY / bb newBot dy)
   (setq bb (ali:get-bbox ent))
   (if bb
@@ -816,7 +834,7 @@
       (if (> v1 1e-6)
         (if (ali:set-dyn-prop-number prop v1)
           (progn
-            (ali:lock-bottom-stretch ent x yIns targetY botY)
+            (ali:lock-insert-y ent yIns)
             (if (not (ali:verify-top-geo ent x yIns targetY 0.05))
               (progn
                 ;; segunda pasada correctiva
@@ -826,7 +844,7 @@
                     (setq v1 (+ v1 (- targetY topNow)))
                     (if (> v1 1e-6)
                       (if (ali:set-dyn-prop-number prop v1)
-                        (ali:lock-bottom-stretch ent x yIns targetY botY)
+                        (ali:lock-insert-y ent yIns)
                       )
                     )
                   )
@@ -860,7 +878,7 @@
       (if (> v1 1e-6)
         (if (ali:set-obj-prop-number ent pname v1)
           (progn
-            (ali:lock-bottom-stretch ent x yIns targetY botY)
+            (ali:lock-insert-y ent yIns)
             (if (not (ali:verify-top-geo ent x yIns targetY 0.05))
               (progn
                 ;; segunda pasada correctiva
@@ -870,7 +888,7 @@
                     (setq v1 (+ v1 (- targetY topNow)))
                     (if (> v1 1e-6)
                       (if (ali:set-obj-prop-number ent pname v1)
-                        (ali:lock-bottom-stretch ent x yIns targetY botY)
+                        (ali:lock-insert-y ent yIns)
                       )
                     )
                   )
@@ -907,7 +925,7 @@
             newScale (* sign (* absS (/ goalSpan curSpan))))
       (if (ali:set-yscale obj newScale)
         (progn
-          (ali:lock-bottom-stretch ent x yIns targetY botY)
+          (ali:lock-insert-y ent yIns)
           ;; Pasadas correctivas sobre la misma medida verde (insercion->top).
           (setq i 0)
           (while (< i 3)
@@ -924,7 +942,7 @@
                           ratio (/ goalSpan curSpanNow)
                           newScale (* sign absS ratio))
                     (if (ali:set-yscale obj newScale)
-                      (ali:lock-bottom-stretch ent x yIns targetY botY)
+                      (ali:lock-insert-y ent yIns)
                       (setq i 3)
                     )
                   )
@@ -1042,13 +1060,13 @@
                 (progn
                   (setq obj (vlax-ename->vla-object ent))
                   (setq ok nil)
-                  ;; LusoCAD 2025: yscale suele ser mas estable.
-                  ;; Fallback: dynprop -> objprop.
-                  (if (ali:try-yscale ent obj x yIns botY topY targetY)
+                  ;; Mantener logica principal por propiedad de altura.
+                  ;; YScale solo como ultimo recurso.
+                  (if (ali:try-dyn-height ent obj x yIns delta botY targetY)
                     (setq ok T)
-                    (if (ali:try-dyn-height ent obj x yIns delta botY targetY)
+                    (if (ali:try-obj-height ent x yIns delta botY targetY)
                       (setq ok T)
-                      (if (ali:try-obj-height ent x yIns delta botY targetY)
+                      (if (ali:try-yscale ent obj x yIns botY topY targetY)
                         (setq ok T)
                         (setq ali:*last-reason* "no-se-pudo-ajustar")
                       )
