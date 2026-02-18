@@ -6,6 +6,59 @@
 ;; ------------------------------------------------------------
 ;; Utilidades base
 ;; ------------------------------------------------------------
+(setq ali:*xdata-app* "ALICOL")
+
+(defun ali:ensure-regapp (app)
+  (if (and app (not (tblsearch "APPID" app)))
+    (entmake
+      (list
+        (cons 0 "APPID")
+        (cons 2 app)
+        (cons 70 0)))
+  )
+)
+
+(defun ali:set-stretched-flag (ent / app ed rec)
+  (setq app ali:*xdata-app*)
+  (if (and ent app)
+    (progn
+      (ali:ensure-regapp app)
+      (setq ed (entget ent '("*")))
+      ;; Quita xdata previa de esta app para no duplicar marcas.
+      (setq ed
+             (vl-remove-if
+               '(lambda (it)
+                  (and (= (car it) -3)
+                       (listp (cdr it))
+                       (listp (car (cdr it)))
+                       (= (car (car (cdr it))) app)))
+               ed))
+      (setq rec (list -3 (list app (cons 1000 "STRETCHED"))))
+      (if (entmod (append ed (list rec)))
+        (entupd ent))
+    )
+  )
+)
+
+(defun ali:is-stretched-flag (ent / app xd pack)
+  (setq app ali:*xdata-app*)
+  (if (and ent app)
+    (progn
+      (setq xd (assoc -3 (entget ent (list app))))
+      (if (and xd
+               (listp (cdr xd))
+               (listp (car (cdr xd))))
+        (progn
+          (setq pack (car (cdr xd))) ; ("APP" (1000 . "..."))
+          (if (and (listp pack)
+                   (= (car pack) app)
+                   (= (cdr (assoc 1000 (cdr pack))) "STRETCHED"))
+            T))
+      )
+    )
+  )
+)
+
 (defun ali:as-3d (pt)
   (cond
     ((and pt (= (length pt) 2)) (list (car pt) (cadr pt) 0.0))
@@ -1072,6 +1125,8 @@
                       )
                     )
                   )
+                  (if ok
+                    (ali:set-stretched-flag ent))
                   ok
                 )
               )
@@ -1238,7 +1293,8 @@
                 (if (ali:move-by ent (list 0.0 dy 0.0))
                   (progn
                     (ali:lock-insert-y ent targetY)
-                    (ali:preserve-top-after-align ent targetY topBefore)
+                    (if (ali:is-stretched-flag ent)
+                      (ali:preserve-top-after-align ent targetY topBefore))
                     T
                   )
                 )
