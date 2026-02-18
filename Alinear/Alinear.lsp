@@ -1147,10 +1147,76 @@
   )
 )
 
+;; Mantiene el top en la misma cota despues de alinear, corrigiendo solo altura.
+;; No toca la logica de ESTIRARCOL: se usa solo como ajuste post-movimiento.
+(defun ali:preserve-top-after-align (ent yIns topKeep / obj topNow delta c prop pname v i ok)
+  (if (and topKeep yIns)
+    (progn
+      (setq topNow (ali:get-top-y ent))
+      (if (and topNow (> (abs (- topKeep topNow)) 1e-6))
+        (progn
+          (setq obj (vlax-ename->vla-object ent)
+                ok nil)
+          ;; 1) Propiedad dinamica de altura
+          (setq c (ali:get-dyn-height-prop obj))
+          (if c
+            (progn
+              (setq prop (car c)
+                    v (cadr c)
+                    i 0)
+              (while (and (< i 3) (not ok))
+                (setq topNow (ali:get-top-y ent)
+                      delta (if topNow (- topKeep topNow) 0.0))
+                (if (<= (abs delta) 0.10)
+                  (setq ok T)
+                  (progn
+                    (setq v (+ v delta))
+                    (if (and (> v 1e-6) (ali:set-dyn-prop-number prop v))
+                      (ali:lock-insert-y ent yIns)
+                      (setq i 3))
+                  )
+                )
+                (setq i (1+ i))
+              )
+            )
+          )
+          ;; 2) Propiedad de objeto (Altura/Height/Distance)
+          (if (not ok)
+            (progn
+              (setq c (ali:get-obj-height-prop ent))
+              (if c
+                (progn
+                  (setq pname (car c)
+                        v (cadr c)
+                        i 0)
+                  (while (and (< i 3) (not ok))
+                    (setq topNow (ali:get-top-y ent)
+                          delta (if topNow (- topKeep topNow) 0.0))
+                    (if (<= (abs delta) 0.10)
+                      (setq ok T)
+                      (progn
+                        (setq v (+ v delta))
+                        (if (and (> v 1e-6) (ali:set-obj-prop-number ent pname v))
+                          (ali:lock-insert-y ent yIns)
+                          (setq i 3))
+                      )
+                    )
+                    (setq i (1+ i))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
 ;; ------------------------------------------------------------
 ;; ALINEARCOL
 ;; ------------------------------------------------------------
-(defun ali:align-one (refs ent / ed typ ins x y targetY dy)
+(defun ali:align-one (refs ent / ed typ ins x y targetY dy topBefore)
   (setq ed (entget ent)
         typ (cdr (assoc 0 ed)))
   (if (/= typ "INSERT")
@@ -1162,13 +1228,20 @@
         (progn
           (setq x (car ins)
                 y (cadr ins))
+          (setq topBefore (ali:get-top-y ent))
           ;; para alinear, usamos el punto mas cercano en Y.
           (setq targetY (ali:get-target-y refs x y nil))
           (if targetY
             (progn
               (setq dy (- targetY y))
               (if (> (abs dy) 1e-6)
-                (ali:move-by ent (list 0.0 dy 0.0))
+                (if (ali:move-by ent (list 0.0 dy 0.0))
+                  (progn
+                    (ali:lock-insert-y ent targetY)
+                    (ali:preserve-top-after-align ent targetY topBefore)
+                    T
+                  )
+                )
                 T
               )
             )
