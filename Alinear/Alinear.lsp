@@ -7,6 +7,9 @@
 ;; Utilidades base
 ;; ------------------------------------------------------------
 (setq ali:*xdata-app* "ALICOL")
+;; Compensacion vertical para que la flecha (punta) llegue a la linea.
+;; Si no se quiere compensacion, poner 0.0.
+(setq ali:*arrow-touch-offset* 0.0693)
 
 (defun ali:ensure-regapp (app)
   (if (and app (not (tblsearch "APPID" app)))
@@ -56,6 +59,17 @@
             T))
       )
     )
+  )
+)
+
+(defun ali:apply-arrow-touch-offset (yTarget yIns / off sgn)
+  (setq off (if (numberp ali:*arrow-touch-offset*) ali:*arrow-touch-offset* 0.0))
+  (if (and yTarget (> (abs off) 1e-9))
+    (progn
+      (setq sgn (if (>= yTarget yIns) 1.0 -1.0))
+      (+ yTarget (* sgn off))
+    )
+    yTarget
   )
 )
 
@@ -1028,7 +1042,7 @@
 ;; ------------------------------------------------------------
 ;; ESTIRARCOL
 ;; ------------------------------------------------------------
-(defun ali:stretch-one (refs ent / ed typ ins x yIns bb yr yrEff botCandidates topCandidates botY topY curSpan goalSpan hVal targetY targetAny delta obj ok minp maxp xMid yMid)
+(defun ali:stretch-one (refs ent / ed typ ins x yIns bb yr yrEff botCandidates topCandidates botY topY curSpan goalSpan hVal targetY targetRaw targetAny delta obj ok minp maxp xMid yMid)
   (setq ali:*last-reason* "sin-detalle")
   (setq ed (entget ent)
         typ (cdr (assoc 0 ed)))
@@ -1052,8 +1066,8 @@
                 xMid (/ (+ (car minp) (car maxp)) 2.0)
                 yMid (/ (+ (cadr minp) (cadr maxp)) 2.0)
                 yIns (if ins (cadr ins) yMid))
-          (setq targetY (ali:get-target-y refs x yIns T))
-          (if (not targetY)
+          (setq targetRaw (ali:get-target-y refs x yIns T))
+          (if (not targetRaw)
             (progn
               (setq targetAny (ali:get-target-y refs x yIns nil))
               (setq ali:*last-reason*
@@ -1068,6 +1082,7 @@
               nil
             )
             (progn
+              (setq targetY (ali:apply-arrow-touch-offset targetRaw yIns))
               (setq yr (ali:get-insert-range-for-target ent x yIns targetY))
               (setq yrEff (ali:get-effective-y-range ent))
               (if yr
