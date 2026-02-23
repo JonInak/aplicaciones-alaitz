@@ -1,15 +1,16 @@
 ;;=============================================================================
-;; Generador de Perfiles Topográficos
+;; Generador de Perfiles Topográficos (Multi-PK)
 ;; Comando principal: GRAFICAPTOP
 ;;=============================================================================
-;; Este script genera una gráfica perfil de terreno dadas una línea de sección
-;; (P.K.) y un conjunto de curvas de nivel seleccionadas.
+;; Este script genera gráficas de perfil de terreno dadas una o más líneas
+;; de sección (P.K.) y un conjunto de curvas de nivel seleccionadas.
+;; Las gráficas se disponen en filas de 4.
 ;;=============================================================================
 
 (vl-load-com)
 
 ;;-----------------------------------------------------------------------------
-;; Funciones de Utilidad
+;; Funciones de Utilidad Básicas
 ;;-----------------------------------------------------------------------------
 
 ;; Convierte un punto a formato 3D (Z=0.0 si falta)
@@ -113,96 +114,24 @@
 )
 
 ;;-----------------------------------------------------------------------------
-;; Comando Principal
+;; Funciones de Cálculo y Dibujo (extraídas para Multi-PK)
 ;;-----------------------------------------------------------------------------
 
-(defun c:GRAFICAPTOP (/ ms sel_pk ent_pk pt_pk obj_pk origin_info p_origen invert_dist total_length
-                        sel_ref ent_ref obj_ref ref_ints ref_pt d_ref pt_on_pk_ref
-                        ss i obj_curva ints_raw pts pt pt_on_pk d z lst lst_sorted temp_raw
-                        p_base scaleX scaleY z_min z_max offset datum pl_pts px py
-                        p_base_end obj_base p_eje_x p_eje_top obj_eje obj_pl text_h obj_txt
-                        obj_mark mark_str label_h)
-                       
-  (setq ms (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))
-  
-  ;; 1. Seleccion de la línea de sección (P.K.)
-  (setq sel_pk (entsel "\nSelecciona la linea de sección (P.K) cerca del lado que representará la COTA ALTA / DISTANCIA 0: "))
-  (if (not sel_pk)
-    (progn (princ "\nNo se seleccionó ninguna entidad.") (exit))
-  )
-  
-  (setq ent_pk (car sel_pk)
-        pt_pk (top:as-3d (cadr sel_pk))
-        obj_pk (vlax-ename->vla-object ent_pk))
-        
-  (setq origin_info (top:get-curve-origin obj_pk pt_pk))
-  (if (not origin_info)
-    (progn (princ "\nLa entidad seleccionada no es una curva geométrica válida (Linea, Polilinea, Arco...).") (exit))
-  )
-  
-  (setq p_origen (car origin_info)
-        invert_dist (cadr origin_info)
-        total_length (caddr origin_info))
-
-  ;; 1.5. Selección de la línea de referencia (opcional)
-  (princ "\n=============================================")
-  (princ "\nSelecciona la LINEA DE REFERENCIA (eje de carretera, muro, etc.)")
-  (princ "\nPulsa ENTER para omitir (el eje se dibujará en Distancia 0).")
-  (princ "\n=============================================")
-  (setq sel_ref (entsel "\nSelecciona la linea de referencia [Enter=omitir]: "))
-  (setq d_ref 0.0) ;; Valor por defecto
-  
-  (if sel_ref
-    (progn
-      (setq ent_ref (car sel_ref)
-            obj_ref (vlax-ename->vla-object ent_ref))
-      ;; Calcular donde la referencia interseca la línea P.K.
-      (setq ref_ints (top:intersect-2d obj_pk obj_ref))
-      (if (and ref_ints (not (vl-catch-all-error-p ref_ints)) (>= (length ref_ints) 3))
-        (progn
-          ;; Tomar el primer punto de intersección
-          (setq ref_pt (list (car ref_ints) (cadr ref_ints) (caddr ref_ints)))
-          ;; Calcular la distancia a lo largo del P.K.
-          (setq pt_on_pk_ref (vl-catch-all-apply 'vlax-curve-getClosestPointTo (list obj_pk ref_pt)))
-          (if (not (vl-catch-all-error-p pt_on_pk_ref))
-            (progn
-              (setq d_ref (vl-catch-all-apply 'vlax-curve-getDistAtPoint (list obj_pk pt_on_pk_ref)))
-              (if (vl-catch-all-error-p d_ref) (setq d_ref 0.0))
-              ;; Invertir si el origen es el end
-              (if invert_dist (setq d_ref (- total_length d_ref)))
-              (princ (strcat "\nReferencia detectada a distancia: " (rtos d_ref 2 2) " del origen P.K."))
-            )
-          )
-        )
-        (princ "\nNo se encontró intersección entre la referencia y el P.K. Se usará Distancia 0.")
-      )
-    )
-    (princ "\nSin línea de referencia. El eje se dibujará en Distancia 0.")
-  )
-
-  ;; 2. Selección de curvas de nivel
-  (princ "\n=============================================")
-  (princ "\nAHORA SELECCIONA LAS CURVAS DE NIVEL (Terreno).")
-  (princ "\nPuedes hacer una ventana que cruce la linea morada para seleccionar")
-  (princ "\ntodas las líneas marrones/verdes del terreno topográfico.")
-  (princ "\n=============================================")
-  (setq ss (ssget '((0 . "*POLYLINE,LINE,SPLINE,ARC"))))
-  (if (not ss)
-    (progn (princ "\nNo se seleccionaron curvas de nivel.") (exit))
-  )
-  
-  ;; 3. Calculo de Intersecciones (Distancia, Elevacion Z)
-  (setq lst nil) ;; Lista global de pares (distancia z)
+;; Calcula las intersecciones de UN P.K. con las curvas de nivel
+;; Devuelve una lista ordenada de (distancia z)
+;; También dibuja marcas magenta en el plano topográfico
+(defun top:calc-intersections (ms obj_pk invert_dist total_length ss
+                               / i obj_curva ints_raw pts pt pt_on_pk d z lst temp_raw
+                                 obj_mark mark_str)
+  (setq lst nil)
   (setq i 0)
   
   (while (< i (sslength ss))
     (setq obj_curva (vlax-ename->vla-object (ssname ss i)))
-    ;; Intersección en 2D para que funcione aunque el P.K. esté a Z=0 y la curva a Z=100
     (setq ints_raw (top:intersect-2d obj_pk obj_curva))
     
     (if (and (not (vl-catch-all-error-p ints_raw)) ints_raw)
       (progn
-        ;; ints_raw devuelto por vlax-invoke es directamente una lista plana '(x y z x y z...)
         (setq pts nil)
         (setq temp_raw ints_raw)
         (while (>= (length temp_raw) 3)
@@ -212,35 +141,30 @@
         (setq pts (reverse pts))
 
         (foreach pt pts
-          ;; Obtenemos la D desde el inicio de la línea de PK
           (setq pt_on_pk (vl-catch-all-apply 'vlax-curve-getClosestPointTo (list obj_pk pt)))
           (if (not (vl-catch-all-error-p pt_on_pk))
             (progn
               (setq d (vl-catch-all-apply 'vlax-curve-getDistAtPoint (list obj_pk pt_on_pk)))
               (if (not (vl-catch-all-error-p d))
                 (progn
-                  ;; Si el inicio seleccionado resulta ser el end, entonces dist real es Longitud - dist actual
                   (if invert_dist (setq d (- total_length d)))
-                  
-                  ;; Obtenemos la cota (Z) de la curva
                   (setq z (top:get-elevation obj_curva pt))
                   
-                  ;; Añadir a nuestra lista validando los valores
                   ;; FILTRO: Solo incluir puntos con elevación real (Z > 0)
                   (if (and d z (> z 0.0))
                     (progn
                       (setq lst (cons (list d z) lst))
-                      ;; MARCA en el plano topográfico: círculo + texto con elevación
+                      ;; MARCA en el plano topográfico
                       (setq mark_str (rtos z 2 1))
                       (setq obj_mark (vl-catch-all-apply 'vla-AddCircle
                                        (list ms (vlax-3d-point pt) 0.3)))
                       (if (not (vl-catch-all-error-p obj_mark))
-                        (vla-put-Color obj_mark 6) ;; Magenta
+                        (vla-put-Color obj_mark 6)
                       )
                       (setq obj_mark (vl-catch-all-apply 'vla-AddText
                                        (list ms mark_str (vlax-3d-point (list (+ (car pt) 0.4) (+ (cadr pt) 0.2) 0.0)) 0.5)))
                       (if (not (vl-catch-all-error-p obj_mark))
-                        (vla-put-Color obj_mark 6) ;; Magenta
+                        (vla-put-Color obj_mark 6)
                       )
                     )
                   )
@@ -254,39 +178,44 @@
     (setq i (1+ i))
   )
   
-  (if (< (length lst) 2)
-    (progn (princ "\nNo se encontraron suficientes cortes (intersecciones) para dibujar gráfica.") (exit))
+  ;; Devolver lista ordenada por distancia
+  (if (>= (length lst) 2)
+    (vl-sort lst '(lambda (a b) (< (car a) (car b))))
+    nil
   )
-  
-  ;; 4. Ordenar y Acotar
-  ;; Ordenamos por distancia de menor a mayor
-  (setq lst_sorted (vl-sort lst '(lambda (a b) (< (car a) (car b)))))
-  
-  (setq z_min (apply 'min (mapcar 'cadr lst_sorted)))
-  (setq z_max (apply 'max (mapcar 'cadr lst_sorted)))
+)
 
-  ;; 5. Inputs Gráficos del Usuario
-  (princ (strcat "\nRango de elevaciones encontrado: Min=" (rtos z_min 2 2) " Max=" (rtos z_max 2 2)))
-  (setq p_base (getpoint "\nSelecciona el punto de inserción para la parte INFERIOR DERECHA (Punto 0): "))
-  (if (not p_base) (exit))
+;; Calcula d_ref para un P.K. dado y una línea de referencia
+(defun top:calc-ref-dist (obj_pk obj_ref invert_dist total_length
+                          / ref_ints ref_pt pt_on_pk_ref d_ref)
+  (setq d_ref 0.0)
+  (setq ref_ints (top:intersect-2d obj_pk obj_ref))
+  (if (and ref_ints (not (vl-catch-all-error-p ref_ints)) (>= (length ref_ints) 3))
+    (progn
+      (setq ref_pt (list (car ref_ints) (cadr ref_ints) (caddr ref_ints)))
+      (setq pt_on_pk_ref (vl-catch-all-apply 'vlax-curve-getClosestPointTo (list obj_pk ref_pt)))
+      (if (not (vl-catch-all-error-p pt_on_pk_ref))
+        (progn
+          (setq d_ref (vl-catch-all-apply 'vlax-curve-getDistAtPoint (list obj_pk pt_on_pk_ref)))
+          (if (vl-catch-all-error-p d_ref) (setq d_ref 0.0))
+          (if invert_dist (setq d_ref (- total_length d_ref)))
+        )
+      )
+    )
+  )
+  d_ref
+)
+
+;; Dibuja UNA gráfica de perfil completa en la posición p_base
+(defun top:draw-one-profile (ms lst_sorted p_base scaleX scaleY datum z_max d_ref total_length pk_label
+                             / offset text_h p_base_end obj_base p_eje_x p_eje_top obj_eje obj_txt
+                               pl_pts i d z px py obj_pl obj_mark mark_str label_h)
   
-  ;; Preguntar escalas si el dibujante necesita exagerar, por defecto 1 a 1.
-  (setq scaleX (getreal "\nFactor de Escala Horizontal (X) <1.0>: "))
-  (if (not scaleX) (setq scaleX 1.0))
-  (setq scaleY (getreal "\nFactor de Escala Vertical (Y) <1.0>: "))
-  (if (not scaleY) (setq scaleY 1.0))
-  
-  ;; 6. Dibujar Ejes Base
-  ;; El origen de coordenadas local es p_base, con X=0 siendo el valor máximo de origen P.K.
-  ;; Como el plan indica que se desplaza hacia la IZQUIERDA:
-  ;; X = X_base - (Distancia * ScaleX)
-  
-  ;; Definir un Datum (Base Y) ligeramente por debajo de la mínima Z para margen gráfico.
-  (setq offset (/ (- z_max z_min) 10.0)) ; dejamos un 10% de margen
+  (setq offset (/ (- z_max (+ datum 0.0)) 10.0))
   (if (< offset 1.0) (setq offset 1.0))
-  (setq datum (- z_min offset))
+  (setq text_h (* offset 0.5))
   
-  ;; Línea base horizontal (Blanca, simulando tierra nivel 0 grafico)
+  ;; Línea base horizontal (Blanca)
   (setq p_base_end (list (- (car p_base) (* total_length scaleX)) (cadr p_base) 0.0))
   (setq obj_base (vl-catch-all-apply 'vla-AddLine (list ms (vlax-3d-point p_base) (vlax-3d-point p_base_end))))
   (if (not (vl-catch-all-error-p obj_base)) (vla-put-Color obj_base 7))
@@ -298,24 +227,33 @@
                  (list ms (vlax-3d-point (list p_eje_x (cadr p_base) 0.0)) (vlax-3d-point p_eje_top))))
   (if (not (vl-catch-all-error-p obj_eje)) (vla-put-Color obj_eje 30))
   
-  ;; Insertar texto de referencia en el eje
-  (setq text_h (* offset 0.5)) ; altura texto
+  ;; Texto de referencia en el eje
   (setq obj_txt (vl-catch-all-apply 'vla-AddText 
                  (list ms 
                        (if (> d_ref 0.0) "REF" "P.K. 0")
                        (vlax-3d-point (list (+ p_eje_x (* text_h 0.2)) (+ (cadr p_base) text_h) 0.0)) 
                        text_h)))
   (if (not (vl-catch-all-error-p obj_txt)) (vla-put-Color obj_txt 30))
-
-  ;; 7. Dibujar Polilínea de Terreno (Verde)
+  
+  ;; Etiqueta del P.K. (debajo de la línea base, a la derecha)
+  (if pk_label
+    (progn
+      (setq obj_txt (vl-catch-all-apply 'vla-AddText
+                     (list ms pk_label
+                           (vlax-3d-point (list (car p_base) (- (cadr p_base) (* text_h 2.5)) 0.0))
+                           (* text_h 1.2))))
+      (if (not (vl-catch-all-error-p obj_txt)) (vla-put-Color obj_txt 1)) ;; Rojo
+    )
+  )
+  
+  ;; Polilínea de Terreno (Verde)
   (setq pl_pts (vlax-make-safearray vlax-vbDouble (cons 0 (1- (* 2 (length lst_sorted))))))
   (setq i 0)
   (foreach obj lst_sorted
-    ;; obj = (distancia altitud_z)
     (setq d (car obj)
           z (cadr obj))
     (setq py (+ (cadr p_base) (* (- z datum) scaleY)))
-    (setq px (- (car p_base) (* d scaleX))) ;; resta porque avanzamos a la izquierda desde el inicio
+    (setq px (- (car p_base) (* d scaleX)))
     
     (vlax-safearray-put-element pl_pts i px)
     (vlax-safearray-put-element pl_pts (1+ i) py)
@@ -325,13 +263,13 @@
   (setq obj_pl (vl-catch-all-apply 'vla-AddLightWeightPolyline (list ms pl_pts)))
   (if (not (vl-catch-all-error-p obj_pl))
     (progn
-      (vla-put-Color obj_pl 3) ;; Color 3 = VERDE
-      (vla-put-ConstantWidth obj_pl (* text_h 0.1)) ;; dar un poco de grosor
+      (vla-put-Color obj_pl 3)
+      (vla-put-ConstantWidth obj_pl (* text_h 0.1))
     )
     (princ (strcat "\nError dibujando perfil. Intersecciones válidas: " (itoa (length lst_sorted))))
   )
-
-  ;; 8. Etiquetas de elevación en la gráfica
+  
+  ;; Etiquetas de elevación (Cyan, vertical)
   (setq label_h (* text_h 0.7))
   (foreach obj lst_sorted
     (setq d (car obj)
@@ -339,24 +277,194 @@
     (setq py (+ (cadr p_base) (* (- z datum) scaleY)))
     (setq px (- (car p_base) (* d scaleX)))
     (setq mark_str (rtos z 2 1))
-    ;; Texto con la cota Z encima de cada punto del perfil
     (setq obj_mark (vl-catch-all-apply 'vla-AddText
                      (list ms mark_str (vlax-3d-point (list px (+ py label_h) 0.0)) label_h)))
     (if (not (vl-catch-all-error-p obj_mark))
       (progn
-        (vla-put-Color obj_mark 4) ;; Cyan
-        (vla-put-Rotation obj_mark (/ pi 2)) ;; Texto vertical para que no se solape
+        (vla-put-Color obj_mark 4)
+        (vla-put-Rotation obj_mark (/ pi 2))
       )
     )
   )
+)
 
-  (princ "\nGeneración Completa. Puntos analizados: ")
-  (princ (length lst_sorted))
+;;-----------------------------------------------------------------------------
+;; Comando Principal (Multi-PK)
+;;-----------------------------------------------------------------------------
+
+(defun c:GRAFICAPTOP (/ ms pk_list sel_pk ent_pk pt_pk obj_pk origin_info invert_dist total_length
+                        sel_ref ent_ref obj_ref has_ref
+                        ss pk_data all_results result lst_sorted d_ref
+                        z_min z_max z_min_g z_max_g offset datum
+                        p_base scaleX scaleY max_width max_height gap
+                        n col row p_cur pk_label num_pk)
+                       
+  (setq ms (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))
+  
+  ;; 1. Selección MÚLTIPLE de líneas de sección (P.K.)
+  (princ "\n=============================================")
+  (princ "\nSelecciona las LINEAS P.K. una por una.")
+  (princ "\nClica cerca de la parte ALTA (Distancia 0) de cada P.K.")
+  (princ "\nPulsa ENTER cuando hayas terminado de seleccionar.")
+  (princ "\n=============================================")
+  
+  (setq pk_list nil)
+  (setq sel_pk T) ;; Valor inicial para entrar al loop
+  
+  (while sel_pk
+    (setq sel_pk (entsel (strcat "\nSelecciona P.K. #" (itoa (1+ (length pk_list))) " [Enter=terminar]: ")))
+    (if sel_pk
+      (progn
+        (setq ent_pk (car sel_pk)
+              pt_pk (top:as-3d (cadr sel_pk))
+              obj_pk (vlax-ename->vla-object ent_pk))
+        (setq origin_info (top:get-curve-origin obj_pk pt_pk))
+        (if origin_info
+          (progn
+            (setq pk_list (cons (list obj_pk
+                                     (cadr origin_info)    ;; invert_dist
+                                     (caddr origin_info))  ;; total_length
+                                pk_list))
+            (princ (strcat "\n  -> P.K. #" (itoa (length pk_list)) " añadido (Long: " (rtos (caddr origin_info) 2 1) ")"))
+          )
+          (princ "\n  -> Entidad no válida, ignorada.")
+        )
+      )
+    )
+  )
+  
+  (setq pk_list (reverse pk_list))
+  (setq num_pk (length pk_list))
+  
+  (if (< num_pk 1)
+    (progn (princ "\nNo se seleccionó ninguna línea P.K.") (exit))
+  )
+  (princ (strcat "\n" (itoa num_pk) " línea(s) P.K. seleccionada(s)."))
+  
+  ;; 2. Selección de la línea de referencia (opcional, compartida)
+  (princ "\n=============================================")
+  (princ "\nSelecciona la LINEA DE REFERENCIA (compartida para todos los P.K.)")
+  (princ "\nPulsa ENTER para omitir.")
+  (princ "\n=============================================")
+  (setq sel_ref (entsel "\nSelecciona la linea de referencia [Enter=omitir]: "))
+  (setq has_ref nil)
+  
+  (if sel_ref
+    (progn
+      (setq ent_ref (car sel_ref)
+            obj_ref (vlax-ename->vla-object ent_ref))
+      (setq has_ref T)
+      (princ "\n  -> Línea de referencia seleccionada.")
+    )
+    (princ "\nSin línea de referencia. El eje se dibujará en Distancia 0.")
+  )
+  
+  ;; 3. Selección de curvas de nivel (compartida)
+  (princ "\n=============================================")
+  (princ "\nAHORA SELECCIONA LAS CURVAS DE NIVEL (Terreno).")
+  (princ "\nHaz una ventana grande que englobe TODAS las líneas P.K.")
+  (princ "\n=============================================")
+  (setq ss (ssget '((0 . "*POLYLINE,LINE,SPLINE,ARC"))))
+  (if (not ss)
+    (progn (princ "\nNo se seleccionaron curvas de nivel.") (exit))
+  )
+  
+  ;; 4. Calcular intersecciones para CADA P.K.
+  (princ "\n\nCalculando intersecciones...")
+  (setq all_results nil)
+  (setq z_min_g 1e10)  ;; Mínimo global
+  (setq z_max_g -1e10) ;; Máximo global
+  (setq max_width 0.0) ;; Ancho máximo de gráfica
+  (setq n 0)
+  
+  (foreach pk_data pk_list
+    (setq obj_pk (car pk_data)
+          invert_dist (cadr pk_data)
+          total_length (caddr pk_data))
+    
+    ;; Calcular intersecciones
+    (setq lst_sorted (top:calc-intersections ms obj_pk invert_dist total_length ss))
+    
+    ;; Calcular d_ref para este P.K.
+    (if has_ref
+      (setq d_ref (top:calc-ref-dist obj_pk obj_ref invert_dist total_length))
+      (setq d_ref 0.0)
+    )
+    
+    (if lst_sorted
+      (progn
+        ;; Actualizar mínimos/máximos globales
+        (setq z_min (apply 'min (mapcar 'cadr lst_sorted)))
+        (setq z_max (apply 'max (mapcar 'cadr lst_sorted)))
+        (if (< z_min z_min_g) (setq z_min_g z_min))
+        (if (> z_max z_max_g) (setq z_max_g z_max))
+        (if (> total_length max_width) (setq max_width total_length))
+        
+        ;; Guardar resultado: (lst_sorted d_ref total_length pk_index)
+        (setq all_results (cons (list lst_sorted d_ref total_length (1+ n)) all_results))
+        (princ (strcat "\n  P.K. #" (itoa (1+ n)) ": " (itoa (length lst_sorted)) " puntos (Z: " (rtos z_min 2 1) "-" (rtos z_max 2 1) ")"))
+      )
+      (princ (strcat "\n  P.K. #" (itoa (1+ n)) ": Sin intersecciones válidas, omitido."))
+    )
+    (setq n (1+ n))
+  )
+  
+  (setq all_results (reverse all_results))
+  
+  (if (< (length all_results) 1)
+    (progn (princ "\nNingún P.K. produjo intersecciones válidas.") (exit))
+  )
+  
+  ;; 5. Inputs Gráficos del Usuario
+  (princ (strcat "\n\nRango de elevaciones GLOBAL: Min=" (rtos z_min_g 2 2) " Max=" (rtos z_max_g 2 2)))
+  (princ (strcat "\nGráficas a dibujar: " (itoa (length all_results))))
+  (setq p_base (getpoint "\nSelecciona el punto de inserción (INFERIOR DERECHA de la primera gráfica): "))
+  (if (not p_base) (exit))
+  
+  (setq scaleX (getreal "\nFactor de Escala Horizontal (X) <1.0>: "))
+  (if (not scaleX) (setq scaleX 1.0))
+  (setq scaleY (getreal "\nFactor de Escala Vertical (Y) <1.0>: "))
+  (if (not scaleY) (setq scaleY 1.0))
+  
+  ;; 6. Calcular Datum global y dimensiones de layout
+  (setq offset (/ (- z_max_g z_min_g) 10.0))
+  (if (< offset 1.0) (setq offset 1.0))
+  (setq datum (- z_min_g offset))
+  
+  (setq max_width (* max_width scaleX))
+  (setq max_height (+ (* (- z_max_g datum) scaleY) (* offset 2)))
+  (setq gap (* max_width 0.15)) ;; 15% de separación entre gráficas
+  
+  ;; 7. Dibujar gráficas en filas de 4
+  (setq n 0)
+  (foreach result all_results
+    (setq lst_sorted (car result)
+          d_ref (cadr result)
+          total_length (caddr result))
+    (setq pk_label (strcat "P.K. #" (itoa (cadddr result))))
+    
+    ;; Calcular posición en el grid (filas de 4)
+    (setq col (rem n 4))
+    (setq row (/ n 4))
+    
+    ;; p_cur = posición inferior-derecha de esta gráfica
+    (setq p_cur (list
+                  (+ (car p_base) (* col (+ max_width gap)))
+                  (- (cadr p_base) (* row (+ max_height gap)))
+                  0.0))
+    
+    ;; Dibujar la gráfica
+    (top:draw-one-profile ms lst_sorted p_cur scaleX scaleY datum z_max_g d_ref total_length pk_label)
+    
+    (setq n (1+ n))
+  )
+  
+  (princ (strcat "\n\nGeneración Completa. " (itoa (length all_results)) " gráfica(s) dibujada(s)."))
   (princ)
 )
 
 (princ "\n=============================================")
-(princ "\nAplicacion Topografica Cargada con Exito.")
+(princ "\nAplicacion Topografica (Multi-PK) Cargada con Exito.")
 (princ "\nEscribe GRAFICAPTOP para crear graficas de perfiles.")
 (princ "\n=============================================")
 (princ)
