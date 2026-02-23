@@ -113,6 +113,69 @@
   )
 )
 
+;; Busca el texto "P.K.=XXX" más cercano a una línea P.K.
+;; Usa distancia PERPENDICULAR a la línea (no al punto medio) para mayor precisión
+;; Devuelve el string del texto encontrado o nil
+(defun top:find-pk-label (obj_pk / start_pt end_pt mid_pt radius
+                          ss_txt i ent_txt obj_txt txt_str txt_pt closest_pt
+                          best_str best_dist cur_dist p1 p2)
+  (setq start_pt (vl-catch-all-apply 'vlax-curve-getStartPoint (list obj_pk)))
+  (setq end_pt (vl-catch-all-apply 'vlax-curve-getEndPoint (list obj_pk)))
+  
+  (if (or (vl-catch-all-error-p start_pt) (vl-catch-all-error-p end_pt))
+    nil
+    (progn
+      ;; Punto medio para definir la zona de búsqueda
+      (setq mid_pt (list (/ (+ (car start_pt) (car end_pt)) 2.0)
+                         (/ (+ (cadr start_pt) (cadr end_pt)) 2.0)
+                         0.0))
+      ;; Radio de búsqueda generoso (la longitud completa de la línea)
+      (setq radius (distance start_pt end_pt))
+      
+      ;; Definir caja de búsqueda alrededor del punto medio
+      (setq p1 (list (- (car mid_pt) radius) (- (cadr mid_pt) radius)))
+      (setq p2 (list (+ (car mid_pt) radius) (+ (cadr mid_pt) radius)))
+      
+      ;; Buscar TEXT y MTEXT en la zona
+      (setq ss_txt (ssget "C" p1 p2 '((0 . "TEXT,MTEXT"))))
+      
+      (if ss_txt
+        (progn
+          (setq best_str nil best_dist 1e10 i 0)
+          (while (< i (sslength ss_txt))
+            (setq ent_txt (ssname ss_txt i))
+            (setq obj_txt (vlax-ename->vla-object ent_txt))
+            (setq txt_str (vla-get-TextString obj_txt))
+            
+            ;; Filtrar: debe contener "P.K" o "PK"
+            (if (or (vl-string-search "P.K" (strcase txt_str))
+                    (vl-string-search "PK" (strcase txt_str)))
+              (progn
+                ;; Obtener punto de inserción del texto
+                (setq txt_pt (vlax-safearray->list 
+                               (vlax-variant-value (vla-get-InsertionPoint obj_txt))))
+                ;; Distancia PERPENDICULAR: punto más cercano sobre la línea P.K. al texto
+                (setq closest_pt (vl-catch-all-apply 'vlax-curve-getClosestPointTo 
+                                   (list obj_pk txt_pt)))
+                (if (not (vl-catch-all-error-p closest_pt))
+                  (setq cur_dist (distance closest_pt txt_pt))
+                  (setq cur_dist (distance mid_pt txt_pt)) ;; Fallback
+                )
+                (if (< cur_dist best_dist)
+                  (setq best_dist cur_dist
+                        best_str txt_str)
+                )
+              )
+            )
+            (setq i (1+ i))
+          )
+          best_str
+        )
+      )
+    )
+  )
+)
+
 ;;-----------------------------------------------------------------------------
 ;; Funciones de Cálculo y Dibujo (extraídas para Multi-PK)
 ;;-----------------------------------------------------------------------------
@@ -235,14 +298,15 @@
                        text_h)))
   (if (not (vl-catch-all-error-p obj_txt)) (vla-put-Color obj_txt 30))
   
-  ;; Etiqueta del P.K. (debajo de la línea base, a la derecha)
+  ;; Etiqueta del P.K. (debajo de la línea base, centrada bajo la gráfica)
   (if pk_label
     (progn
       (setq obj_txt (vl-catch-all-apply 'vla-AddText
                      (list ms pk_label
-                           (vlax-3d-point (list (car p_base) (- (cadr p_base) (* text_h 2.5)) 0.0))
+                           (vlax-3d-point (list (- (car p_base) (/ (* total_length scaleX) 2.0))
+                                               (- (cadr p_base) (* text_h 2.5)) 0.0))
                            (* text_h 1.2))))
-      (if (not (vl-catch-all-error-p obj_txt)) (vla-put-Color obj_txt 1)) ;; Rojo
+      (if (not (vl-catch-all-error-p obj_txt)) (vla-put-Color obj_txt 7)) ;; Blanco
     )
   )
   
@@ -270,7 +334,7 @@
   )
   
   ;; Etiquetas de elevación (Cyan, vertical)
-  (setq label_h (* text_h 0.7))
+  (setq label_h (* text_h 0.4))
   (foreach obj lst_sorted
     (setq d (car obj)
           z (cadr obj))
@@ -293,7 +357,7 @@
 ;;-----------------------------------------------------------------------------
 
 (defun c:GRAFICAPTOP (/ ms pk_list sel_pk ent_pk pt_pk obj_pk origin_info invert_dist total_length
-                        sel_ref ent_ref obj_ref has_ref
+                        sel_ref ent_ref obj_ref has_ref detected_label user_input
                         ss pk_data all_results result lst_sorted d_ref
                         z_min z_max z_min_g z_max_g offset datum
                         p_base scaleX scaleY max_width max_height gap
@@ -321,11 +385,32 @@
         (setq origin_info (top:get-curve-origin obj_pk pt_pk))
         (if origin_info
           (progn
+            ;; Intentar detectar etiqueta P.K. automáticamente
+            (setq detected_label (top:find-pk-label obj_pk))
+            (if detected_label
+              (progn
+                (princ (strcat "\n  -> Detectado: " detected_label))
+                (setq user_input (getstring (strcat "\n     Confirmar [Enter=ok / escribir otro]: ")))
+                (if (= user_input "")
+                  (setq pk_label detected_label)
+                  (setq pk_label user_input)
+                )
+              )
+              (progn
+                (setq user_input (getstring "\n  -> No se detectó etiqueta. Escribe nombre del P.K.: "))
+                (if (= user_input "")
+                  (setq pk_label (strcat "P.K. #" (itoa (1+ (length pk_list)))))
+                  (setq pk_label user_input)
+                )
+              )
+            )
+            
             (setq pk_list (cons (list obj_pk
                                      (cadr origin_info)    ;; invert_dist
-                                     (caddr origin_info))  ;; total_length
+                                     (caddr origin_info)   ;; total_length
+                                     pk_label)             ;; etiqueta
                                 pk_list))
-            (princ (strcat "\n  -> P.K. #" (itoa (length pk_list)) " añadido (Long: " (rtos (caddr origin_info) 2 1) ")"))
+            (princ (strcat "\n  -> " pk_label " añadido (Long: " (rtos (caddr origin_info) 2 1) ")"))
           )
           (princ "\n  -> Entidad no válida, ignorada.")
         )
@@ -380,7 +465,8 @@
   (foreach pk_data pk_list
     (setq obj_pk (car pk_data)
           invert_dist (cadr pk_data)
-          total_length (caddr pk_data))
+          total_length (caddr pk_data)
+          pk_label (cadddr pk_data))
     
     ;; Calcular intersecciones
     (setq lst_sorted (top:calc-intersections ms obj_pk invert_dist total_length ss))
@@ -400,11 +486,11 @@
         (if (> z_max z_max_g) (setq z_max_g z_max))
         (if (> total_length max_width) (setq max_width total_length))
         
-        ;; Guardar resultado: (lst_sorted d_ref total_length pk_index)
-        (setq all_results (cons (list lst_sorted d_ref total_length (1+ n)) all_results))
-        (princ (strcat "\n  P.K. #" (itoa (1+ n)) ": " (itoa (length lst_sorted)) " puntos (Z: " (rtos z_min 2 1) "-" (rtos z_max 2 1) ")"))
+        ;; Guardar resultado: (lst_sorted d_ref total_length pk_label)
+        (setq all_results (cons (list lst_sorted d_ref total_length pk_label) all_results))
+        (princ (strcat "\n  " pk_label ": " (itoa (length lst_sorted)) " puntos (Z: " (rtos z_min 2 1) "-" (rtos z_max 2 1) ")"))
       )
-      (princ (strcat "\n  P.K. #" (itoa (1+ n)) ": Sin intersecciones válidas, omitido."))
+      (princ (strcat "\n  " pk_label ": Sin intersecciones válidas, omitido."))
     )
     (setq n (1+ n))
   )
@@ -441,11 +527,11 @@
     (setq lst_sorted (car result)
           d_ref (cadr result)
           total_length (caddr result))
-    (setq pk_label (strcat "P.K. #" (itoa (cadddr result))))
+    (setq pk_label (cadddr result))
     
     ;; Calcular posición en el grid (filas de 4)
-    (setq col (rem n 4))
-    (setq row (/ n 4))
+    (setq col (rem n 5))
+    (setq row (/ n 5))
     
     ;; p_cur = posición inferior-derecha de esta gráfica
     (setq p_cur (list
