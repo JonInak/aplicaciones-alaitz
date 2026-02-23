@@ -119,8 +119,9 @@
 (defun c:GRAFICAPTOP (/ ms sel_pk ent_pk pt_pk obj_pk origin_info p_origen invert_dist total_length
                         sel_ref ent_ref obj_ref ref_ints ref_pt d_ref pt_on_pk_ref
                         ss i obj_curva ints_raw pts pt pt_on_pk d z lst lst_sorted temp_raw
-                        p_base scaleX scaleY z_min z_max offset datum pl_pts
-                        p_base_end obj_base p_eje_x p_eje_top obj_eje obj_pl text_h obj_txt)
+                        p_base scaleX scaleY z_min z_max offset datum pl_pts px py
+                        p_base_end obj_base p_eje_x p_eje_top obj_eje obj_pl text_h obj_txt
+                        obj_mark mark_str label_h)
                        
   (setq ms (vla-get-ModelSpace (vla-get-ActiveDocument (vlax-get-acad-object))))
   
@@ -227,7 +228,21 @@
                   ;; Añadir a nuestra lista validando los valores
                   ;; FILTRO: Solo incluir puntos con elevación real (Z > 0)
                   (if (and d z (> z 0.0))
-                    (setq lst (cons (list d z) lst))
+                    (progn
+                      (setq lst (cons (list d z) lst))
+                      ;; MARCA en el plano topográfico: círculo + texto con elevación
+                      (setq mark_str (rtos z 2 1))
+                      (setq obj_mark (vl-catch-all-apply 'vla-AddCircle
+                                       (list ms (vlax-3d-point pt) 0.3)))
+                      (if (not (vl-catch-all-error-p obj_mark))
+                        (vla-put-Color obj_mark 6) ;; Magenta
+                      )
+                      (setq obj_mark (vl-catch-all-apply 'vla-AddText
+                                       (list ms mark_str (vlax-3d-point (list (+ (car pt) 0.4) (+ (cadr pt) 0.2) 0.0)) 0.5)))
+                      (if (not (vl-catch-all-error-p obj_mark))
+                        (vla-put-Color obj_mark 6) ;; Magenta
+                      )
+                    )
                   )
                 )
               )
@@ -314,6 +329,25 @@
       (vla-put-ConstantWidth obj_pl (* text_h 0.1)) ;; dar un poco de grosor
     )
     (princ (strcat "\nError dibujando perfil. Intersecciones válidas: " (itoa (length lst_sorted))))
+  )
+
+  ;; 8. Etiquetas de elevación en la gráfica
+  (setq label_h (* text_h 0.7))
+  (foreach obj lst_sorted
+    (setq d (car obj)
+          z (cadr obj))
+    (setq py (+ (cadr p_base) (* (- z datum) scaleY)))
+    (setq px (- (car p_base) (* d scaleX)))
+    (setq mark_str (rtos z 2 1))
+    ;; Texto con la cota Z encima de cada punto del perfil
+    (setq obj_mark (vl-catch-all-apply 'vla-AddText
+                     (list ms mark_str (vlax-3d-point (list px (+ py label_h) 0.0)) label_h)))
+    (if (not (vl-catch-all-error-p obj_mark))
+      (progn
+        (vla-put-Color obj_mark 4) ;; Cyan
+        (vla-put-Rotation obj_mark (/ pi 2)) ;; Texto vertical para que no se solape
+      )
+    )
   )
 
   (princ "\nGeneración Completa. Puntos analizados: ")
