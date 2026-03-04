@@ -21,7 +21,7 @@
 ;;=================== CONFIGURACION ===================;;
 
 (setq acot:*side-min* 10.0)       ;; Long. minima arista rombo
-(setq acot:*side-max* 60.0)       ;; Long. maxima arista rombo
+(setq acot:*side-max* 65.0)       ;; Long. maxima arista rombo
 (setq acot:*cluster-radius* 100.0) ;; Radio agrupacion lineas del mismo rombo
 (setq acot:*layer* "z_ACOTADO")    ;; Capa para anotaciones
 (setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
@@ -268,14 +268,23 @@
   unique
 )
 
-;;; Identifica N/E/S/W por coordenadas
-(defun acot:identify-nesw (verts / sy sx)
-  (setq sy (vl-sort verts '(lambda (a b) (> (cadr a) (cadr b)))))
-  (setq sx (vl-sort verts '(lambda (a b) (> (car a) (car b)))))
-  (list (cons "N" (car sy))
-        (cons "S" (last sy))
-        (cons "E" (car sx))
-        (cons "W" (last sx)))
+;;; Identifica N/E/S/W por coordenadas (asignacion unica)
+;;; Ordena por Y: S=min_Y, N=max_Y, luego E/W de los 2 restantes por X
+(defun acot:identify-nesw (verts / sorted-y s-vert n-vert mid1 mid2 e-vert w-vert)
+  (setq sorted-y (vl-sort verts '(lambda (a b) (< (cadr a) (cadr b)))))
+  (setq s-vert (car sorted-y))        ;; vertice con menor Y
+  (setq n-vert (last sorted-y))       ;; vertice con mayor Y
+  (setq mid1   (cadr sorted-y))       ;; 2do vertice
+  (setq mid2   (caddr sorted-y))      ;; 3er vertice
+  ;; De los dos intermedios, E = mayor X, W = menor X
+  (if (> (car mid1) (car mid2))
+    (setq e-vert mid1  w-vert mid2)
+    (setq e-vert mid2  w-vert mid1)
+  )
+  (list (cons "N" n-vert)
+        (cons "S" s-vert)
+        (cons "E" e-vert)
+        (cons "W" w-vert))
 )
 
 ;;=================== DIBUJO ===================;;
@@ -327,6 +336,7 @@
   lv-txt rv-txt tv-txt)
 
   (setq verts (acot:extract-vertices diamond-lines))
+  (acot:log (strcat "  Vertices: " (itoa (length verts))))
   (if (/= (length verts) 4)
     (progn (princ "\nError: no se encontraron 4 vertices.") nil)
     (progn
@@ -335,6 +345,10 @@
             e (cdr (assoc "E" nesw))
             s (cdr (assoc "S" nesw))
             w (cdr (assoc "W" nesw)))
+      (acot:log (strcat "  N=(" (rtos (car n) 2 1) "," (rtos (cadr n) 2 1) ")"
+                        " E=(" (rtos (car e) 2 1) "," (rtos (cadr e) 2 1) ")"
+                        " S=(" (rtos (car s) 2 1) "," (rtos (cadr s) 2 1) ")"
+                        " W=(" (rtos (car w) 2 1) "," (rtos (cadr w) 2 1) ")"))
 
       ;; Centro
       (setq center (list
