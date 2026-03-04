@@ -12,7 +12,6 @@
     1. Cargar con APPLOAD
     2. Ejecutar comando ACOTAR
     3. Seleccionar los elementos del cuadro (textos PHC/PHR + lineas del rombo)
-    4. El script detecta el rombo, calcula escala y dibuja cotas + rombo interior
 
   Revision: 04/03/2026
 |;
@@ -21,32 +20,47 @@
 
 ;;=================== CONFIGURACION ===================;;
 
-;; Longitud min/max de las aristas del rombo (en unidades de dibujo)
-(setq acot:*side-min* 10.0)
-(setq acot:*side-max* 60.0)
+(setq acot:*side-min* 10.0)       ;; Long. minima arista rombo
+(setq acot:*side-max* 60.0)       ;; Long. maxima arista rombo
+(setq acot:*cluster-radius* 40.0) ;; Radio agrupacion lineas del mismo rombo
+(setq acot:*layer* "z_ACOTADO")   ;; Capa para anotaciones
+(setq acot:*dimstyle* "cota100")  ;; Estilo de cota
+(setq acot:*color* 1)             ;; Color rojo
 
-;; Radio para agrupar lineas del mismo rombo
-(setq acot:*cluster-radius* 40.0)
+;;=================== UTILIDADES MATEMATICAS ===================;;
 
-;; Capa para las anotaciones
-(setq acot:*layer* "z_ACOTADO")
+(defun acot:dist2d (a b)
+  (distance (list (car a) (cadr a)) (list (car b) (cadr b)))
+)
 
-;; Estilo de cota a usar
-(setq acot:*dimstyle* "cota100")
+(defun acot:midpt (a b)
+  (list (/ (+ (car a) (car b)) 2.0)
+        (/ (+ (cadr a) (cadr b)) 2.0))
+)
 
-;; Color rojo para el rombo interior
-(setq acot:*color* 1)
+;;; Normaliza un vector 2D
+(defun acot:normalize (v / len)
+  (setq len (sqrt (+ (* (car v) (car v)) (* (cadr v) (cadr v)))))
+  (if (> len 1e-6)
+    (list (/ (car v) len) (/ (cadr v) len))
+    (list 0.0 0.0)
+  )
+)
+
+;;; Desplaza un punto en la direccion de un vector por una distancia
+(defun acot:pt-offset (pt dir dist)
+  (list (+ (car pt) (* (car dir) dist))
+        (+ (cadr pt) (* (cadr dir) dist)))
+)
 
 ;;=================== PARSEO ===================;;
 
-;;; Reemplaza comas por puntos (notacion europea)
 (defun acot:normalize-num (s / p)
   (while (setq p (vl-string-search "," s))
     (setq s (strcat (substr s 1 p) "." (substr s (+ p 2)))))
   s
 )
 
-;;; Extrae la linea PHC/PHR de un texto (soporta MTEXT con \P)
 (defun acot:extract-ph-line (txt / u pos sub endp)
   (setq u (strcase txt))
   (if (or (wcmatch u "PHC *") (wcmatch u "PHR *"))
@@ -64,20 +78,16 @@
   )
 )
 
-;;; Parsea "PHC 120.6" -> (120.0 120.0 6.0)
 (defun acot:parse-phc (txt / s p)
   (setq s (acot:normalize-num (vl-string-trim " " (substr txt 5)))
         p (vl-string-search "." s))
   (if p
-    (list
-      (atof (substr s 1 p))
-      (atof (substr s 1 p))
-      (atof (substr s (+ p 2)))
-    )
+    (list (atof (substr s 1 p))
+          (atof (substr s 1 p))
+          (atof (substr s (+ p 2))))
   )
 )
 
-;;; Parsea "PHR 16.12.6" -> (160.0 120.0 6.0)
 (defun acot:parse-phr (txt / s p1 p2)
   (setq s  (acot:normalize-num (vl-string-trim " " (substr txt 5)))
         p1 (vl-string-search "." s))
@@ -85,22 +95,17 @@
     (progn
       (setq p2 (vl-string-search "." s (1+ p1)))
       (if p2
-        (list
-          (* 10.0 (atof (substr s 1 p1)))
-          (* 10.0 (atof (substr s (+ p1 2) (- p2 p1 1))))
-          (atof (substr s (+ p2 2)))
-        )
-        (list
-          (atof (substr s 1 p1))
-          (atof (substr s 1 p1))
-          (atof (substr s (+ p1 2)))
-        )
+        (list (* 10.0 (atof (substr s 1 p1)))
+              (* 10.0 (atof (substr s (+ p1 2) (- p2 p1 1))))
+              (atof (substr s (+ p2 2))))
+        (list (atof (substr s 1 p1))
+              (atof (substr s 1 p1))
+              (atof (substr s (+ p1 2))))
       )
     )
   )
 )
 
-;;; Parsea cualquier texto PH*
 (defun acot:parse (txt / ph u)
   (setq ph (acot:extract-ph-line txt))
   (if ph
@@ -109,7 +114,6 @@
       (cond
         ((wcmatch u "PHC *") (acot:parse-phc ph))
         ((wcmatch u "PHR *") (acot:parse-phr ph))
-        (T nil)
       )
     )
   )
@@ -117,42 +121,27 @@
 
 ;;=================== DETECCION DEL ROMBO ===================;;
 
-;;; Comprueba si una LINE es una arista diagonal del rombo
-;;; Criterios: longitud entre min/max Y angulo diagonal (~40-50 o ~130-140 grados)
-(defun acot:is-diamond-edge (ent / ed p1 p2 len ang norm-ang)
+;;; Comprueba si una LINE es arista diagonal del rombo
+(defun acot:is-diamond-edge (ent / ed p1 p2 len ang)
   (setq ed  (entget ent)
         p1  (cdr (assoc 10 ed))
         p2  (cdr (assoc 11 ed))
-        len (distance (list (car p1) (cadr p1))
-                      (list (car p2) (cadr p2))))
-  ;; Filtro por longitud
+        len (acot:dist2d p1 p2))
   (if (and (> len acot:*side-min*) (< len acot:*side-max*))
     (progn
-      ;; Calcular angulo y normalizar a 0-180
       (setq ang (angle (list (car p1) (cadr p1))
                        (list (car p2) (cadr p2))))
-      (setq ang (* (/ ang pi) 180.0))  ;; radianes a grados
-      ;; Normalizar a 0-180
-      (if (>= ang 180.0) (setq ang (- ang 180.0)))
-      ;; Aceptar angulos diagonales: 20-70 o 110-160 grados
-      ;; (evita horizontales 0/180 y verticales 90)
+      (setq ang (rem (* (/ ang pi) 180.0) 180.0))
+      (if (< ang 0) (setq ang (+ ang 180.0)))
+      ;; Solo angulos diagonales: 20-70 o 110-160 grados
       (or (and (> ang 20.0) (< ang 70.0))
           (and (> ang 110.0) (< ang 160.0)))
     )
   )
 )
 
-;;; Calcula el punto medio de una LINE
-(defun acot:line-midpoint (ent / ed p1 p2)
-  (setq ed (entget ent)
-        p1 (cdr (assoc 10 ed))
-        p2 (cdr (assoc 11 ed)))
-  (list (/ (+ (car p1) (car p2)) 2.0)
-        (/ (+ (cadr p1) (cadr p2)) 2.0))
-)
-
-;;; Obtiene los 2 endpoints de una LINE como lista 2D
-(defun acot:line-endpoints (ent / ed p1 p2)
+;;; Obtiene los 2 endpoints 2D de una LINE
+(defun acot:line-pts (ent / ed p1 p2)
   (setq ed (entget ent)
         p1 (cdr (assoc 10 ed))
         p2 (cdr (assoc 11 ed)))
@@ -160,204 +149,168 @@
         (list (car p2) (cadr p2)))
 )
 
-;;; Busca las 4 lineas del rombo mas cercano a un punto
-;;; Devuelve lista de 4 entidades LINE o nil
+;;; Busca las 4 lineas del rombo mas cercano al punto dado
 (defun acot:find-diamond-lines (pt diamond-lines /
   best-d best-mp ent mp d result)
-
-  ;; Paso 1: Encontrar la linea diagonal mas cercana al texto
   (setq best-d 1e99)
   (foreach ent diamond-lines
-    (setq mp (acot:line-midpoint ent)
-          d  (distance (list (car pt) (cadr pt)) mp))
+    (setq mp (apply 'acot:midpt (acot:line-pts ent))
+          d  (acot:dist2d pt mp))
     (if (< d best-d)
-      (setq best-d d
-            best-mp mp)
+      (setq best-d d  best-mp mp)
     )
   )
-
-  (if (null best-mp)
-    nil
+  (if best-mp
     (progn
-      ;; Paso 2: Recoger todas las lineas cercanas (mismo rombo)
       (setq result nil)
       (foreach ent diamond-lines
-        (setq mp (acot:line-midpoint ent))
-        (if (< (distance best-mp mp) acot:*cluster-radius*)
+        (setq mp (apply 'acot:midpt (acot:line-pts ent)))
+        (if (< (acot:dist2d best-mp mp) acot:*cluster-radius*)
           (setq result (cons ent result))
         )
       )
-      ;; Devolver solo si tenemos 4 lineas (un rombo completo)
-      (if (= (length result) 4)
-        result
-        nil
-      )
+      (if (= (length result) 4) result nil)
     )
   )
 )
 
-;;; Extrae los 4 vertices unicos de 4 lineas del rombo
-;;; Devuelve lista de 4 puntos 2D
-(defun acot:extract-vertices (lines / all-pts unique-pts pt found tol)
-  (setq tol 0.5)  ;; tolerancia para considerar puntos iguales
-  ;; Recoger todos los endpoints (8 puntos)
-  (setq all-pts nil)
+;;; Extrae 4 vertices unicos de las 4 lineas
+(defun acot:extract-vertices (lines / all-pts unique tol pt found)
+  (setq tol 0.5  all-pts nil)
   (foreach ent lines
-    (setq all-pts (append (acot:line-endpoints ent) all-pts))
+    (setq all-pts (append (acot:line-pts ent) all-pts))
   )
-  ;; Eliminar duplicados (cada vertice aparece 2 veces)
-  (setq unique-pts nil)
+  (setq unique nil)
   (foreach pt all-pts
     (setq found nil)
-    (foreach upt unique-pts
-      (if (< (distance pt upt) tol)
-        (setq found T)
-      )
+    (foreach u unique
+      (if (< (acot:dist2d pt u) tol) (setq found T))
     )
-    (if (not found)
-      (setq unique-pts (cons pt unique-pts))
-    )
+    (if (not found) (setq unique (cons pt unique)))
   )
-  unique-pts
+  unique
 )
 
-;;; Identifica vertices N/E/S/W de un rombo (por coordenadas)
-;;; Devuelve lista asociativa: ((N . pt) (E . pt) (S . pt) (W . pt))
-(defun acot:identify-nesw (vertices / sorted-y sorted-x n s e w)
-  ;; N = mayor Y, S = menor Y
-  (setq sorted-y (vl-sort vertices
-    '(lambda (a b) (> (cadr a) (cadr b)))))
-  (setq n (car sorted-y)
-        s (last sorted-y))
-  ;; E = mayor X, W = menor X (entre los 2 restantes)
-  (setq sorted-x (vl-sort vertices
-    '(lambda (a b) (> (car a) (car b)))))
-  (setq e (car sorted-x)
-        w (last sorted-x))
-  (list (cons "N" n) (cons "E" e) (cons "S" s) (cons "W" w))
+;;; Identifica N/E/S/W por coordenadas
+(defun acot:identify-nesw (verts / sy sx)
+  (setq sy (vl-sort verts '(lambda (a b) (> (cadr a) (cadr b)))))
+  (setq sx (vl-sort verts '(lambda (a b) (> (car a) (car b)))))
+  (list (cons "N" (car sy))
+        (cons "S" (last sy))
+        (cons "E" (car sx))
+        (cons "W" (last sx)))
 )
 
 ;;=================== DIBUJO ===================;;
 
-;;; Crea una linea
 (defun acot:mk-line (a b ly cl)
   (entmake
-    (list
-      '(0 . "LINE")
-      (cons 8 ly)
-      (cons 62 cl)
+    (list '(0 . "LINE") (cons 8 ly) (cons 62 cl)
       (cons 10 (list (car a) (cadr a) 0.0))
-      (cons 11 (list (car b) (cadr b) 0.0))
-    )
-  )
+      (cons 11 (list (car b) (cadr b) 0.0))))
 )
 
-;;; Mueve un punto hacia el centro por una distancia dada
-(defun acot:offset-toward-center (pt center offset / dx dy dist nx ny)
-  (setq dx (- (car center) (car pt))
-        dy (- (cadr center) (cadr pt))
-        dist (sqrt (+ (* dx dx) (* dy dy))))
-  (if (> dist 0.001)
-    (list
-      (+ (car pt) (* (/ dx dist) offset))
-      (+ (cadr pt) (* (/ dy dist) offset)))
-    pt
-  )
-)
-
-;;; Dibuja el rombo interior (4 lineas)
-(defun acot:draw-inner-diamond (nesw center offset ly cl /
-  n-in e-in s-in w-in)
-  (setq n-in (acot:offset-toward-center (cdr (assoc "N" nesw)) center offset)
-        e-in (acot:offset-toward-center (cdr (assoc "E" nesw)) center offset)
-        s-in (acot:offset-toward-center (cdr (assoc "S" nesw)) center offset)
-        w-in (acot:offset-toward-center (cdr (assoc "W" nesw)) center offset))
-  ;; Dibujar 4 lados del rombo interior
-  (acot:mk-line n-in e-in ly cl)
-  (acot:mk-line e-in s-in ly cl)
-  (acot:mk-line s-in w-in ly cl)
-  (acot:mk-line w-in n-in ly cl)
-  ;; Devolver vertices interiores
-  (list (cons "N" n-in) (cons "E" e-in) (cons "S" s-in) (cons "W" w-in))
-)
-
-;;; Crea una cota DIMALIGNED entre dos puntos
-;;; dim-offset: distancia de la linea de cota respecto a la linea medida
-(defun acot:make-dim-aligned (pt1 pt2 dim-offset-pt)
+(defun acot:make-dim (pt1 pt2 dim-pt)
   (command "_.DIMALIGNED"
     (list (car pt1) (cadr pt1) 0.0)
     (list (car pt2) (cadr pt2) 0.0)
-    (list (car dim-offset-pt) (cadr dim-offset-pt) 0.0))
+    (list (car dim-pt) (cadr dim-pt) 0.0))
 )
 
 ;;=================== ACOTACION PRINCIPAL ===================;;
 
-;;; Acota un pilar PHC/PHR
-;;; diamond-lines: las 4 LINE del rombo
-;;; lv, rv, tv: left value, right value, top value (del parseo)
 (defun acot:annotate-pile (diamond-lines lv rv tv /
-  vertices nesw center side-len scale offset
-  n e s w n-in inner-nesw
-  dim-offset mid-sw mid-se)
+  verts nesw center side-len scale
+  n e s w
+  perp-offset vertex-offset dir-to-cen
+  n-in e-in s-in w-in
+  mid-ne-out mid-ne-in
+  dim-off mid-sw mid-se)
 
-  ;; Extraer vertices y geometria
-  (setq vertices (acot:extract-vertices diamond-lines))
-  (if (/= (length vertices) 4)
-    (progn (princ "\nError: no se encontraron 4 vertices del rombo.") nil)
+  (setq verts (acot:extract-vertices diamond-lines))
+  (if (/= (length verts) 4)
+    (progn (princ "\nError: no se encontraron 4 vertices.") nil)
     (progn
-      (setq nesw (acot:identify-nesw vertices))
+      (setq nesw (acot:identify-nesw verts))
       (setq n (cdr (assoc "N" nesw))
             e (cdr (assoc "E" nesw))
             s (cdr (assoc "S" nesw))
             w (cdr (assoc "W" nesw)))
 
-      ;; Centro = promedio de 4 vertices
+      ;; Centro
       (setq center (list
         (/ (+ (car n) (car e) (car s) (car w)) 4.0)
         (/ (+ (cadr n) (cadr e) (cadr s) (cadr w)) 4.0)))
 
-      ;; Longitud del lado (promedio)
-      (setq side-len (/ (+ (distance s w) (distance s e)
-                           (distance n w) (distance n e)) 4.0))
+      ;; Lado medio del rombo
+      (setq side-len (/ (+ (acot:dist2d n e) (acot:dist2d e s)
+                           (acot:dist2d s w) (acot:dist2d w n)) 4.0))
 
-      ;; Factor de escala: valor_cota / lado_dibujo
+      ;; Factor de escala: cota100 muestra (distancia_dibujo * scale) = valor_real
       (setq scale (/ lv side-len))
 
-      ;; Offset para el rombo interior (en unidades de dibujo)
-      (setq offset (/ tv scale))
+      ;; Offset perpendicular a los lados (en unidades de dibujo)
+      (setq perp-offset (/ tv scale))
 
-      ;; --- Dibujar rombo interior ---
-      (setq inner-nesw
-        (acot:draw-inner-diamond nesw center offset acot:*layer* acot:*color*))
+      ;; Para mover vertices: offset_vertice = offset_perpendicular * sqrt(2)
+      ;; (geometria de un cuadrado: inset perpendicular d -> vertices se mueven d*sqrt(2))
+      (setq vertex-offset (* perp-offset (sqrt 2.0)))
 
-      ;; --- Crear cotas alineadas ---
-      ;; Offset de la linea de cota respecto a la arista medida
-      (setq dim-offset (* side-len 0.15))
+      ;; --- ROMBO INTERIOR ---
+      ;; Mover cada vertice hacia el centro por vertex-offset
+      (setq dir-to-cen (acot:normalize (list (- (car center) (car n))
+                                              (- (cadr center) (cadr n)))))
+      (setq n-in (acot:pt-offset n dir-to-cen vertex-offset))
 
-      ;; Cota izquierda: S -> W (arista inferior-izquierda)
-      ;; La linea de cota va por fuera (offset hacia abajo-izquierda)
-      (setq mid-sw (list
-        (/ (+ (car s) (car w)) 2.0)
-        (/ (+ (cadr s) (cadr w)) 2.0)))
-      (acot:make-dim-aligned s w
-        (list (- (car mid-sw) (* dim-offset (cos (/ pi 4.0))))
-              (- (cadr mid-sw) (* dim-offset (sin (/ pi 4.0))))))
+      (setq dir-to-cen (acot:normalize (list (- (car center) (car e))
+                                              (- (cadr center) (cadr e)))))
+      (setq e-in (acot:pt-offset e dir-to-cen vertex-offset))
 
-      ;; Cota derecha: S -> E (arista inferior-derecha)
-      (setq mid-se (list
-        (/ (+ (car s) (car e)) 2.0)
-        (/ (+ (cadr s) (cadr e)) 2.0)))
-      (acot:make-dim-aligned s e
-        (list (+ (car mid-se) (* dim-offset (cos (/ pi 4.0))))
-              (- (cadr mid-se) (* dim-offset (sin (/ pi 4.0))))))
+      (setq dir-to-cen (acot:normalize (list (- (car center) (car s))
+                                              (- (cadr center) (cadr s)))))
+      (setq s-in (acot:pt-offset s dir-to-cen vertex-offset))
 
-      ;; Cota superior: N exterior -> N interior (gap = top_value)
-      (setq n-in (cdr (assoc "N" inner-nesw)))
-      (acot:make-dim-aligned n n-in
-        (list (- (car n) (* dim-offset (cos (/ pi 4.0))))
-              (+ (cadr n) (* dim-offset (sin (/ pi 4.0))))))
+      (setq dir-to-cen (acot:normalize (list (- (car center) (car w))
+                                              (- (cadr center) (cadr w)))))
+      (setq w-in (acot:pt-offset w dir-to-cen vertex-offset))
 
-      T  ;; exito
+      ;; Dibujar rombo interior (4 lados)
+      (acot:mk-line n-in e-in acot:*layer* acot:*color*)
+      (acot:mk-line e-in s-in acot:*layer* acot:*color*)
+      (acot:mk-line s-in w-in acot:*layer* acot:*color*)
+      (acot:mk-line w-in n-in acot:*layer* acot:*color*)
+
+      ;; --- COTAS ALINEADAS ---
+      (setq dim-off (* side-len 0.15))
+
+      ;; Cota izquierda: S -> W (muestra left_value, ej: "120")
+      (setq mid-sw (acot:midpt s w))
+      (acot:make-dim s w
+        (acot:pt-offset mid-sw
+          (acot:normalize (list (- (car center) (car mid-sw))
+                                (- (cadr center) (cadr mid-sw))))
+          (- dim-off)))  ;; hacia fuera
+
+      ;; Cota derecha: S -> E (muestra right_value, ej: "120")
+      (setq mid-se (acot:midpt s e))
+      (acot:make-dim s e
+        (acot:pt-offset mid-se
+          (acot:normalize (list (- (car center) (car mid-se))
+                                (- (cadr center) (cadr mid-se))))
+          (- dim-off)))  ;; hacia fuera
+
+      ;; Cota superior: distancia perpendicular entre lado NE exterior e interior
+      ;; Medir desde midpoint del lado NE exterior al midpoint del lado NE interior
+      ;; Esto da exactamente perp-offset en dibujo -> muestra tv con cota100
+      (setq mid-ne-out (acot:midpt n e))
+      (setq mid-ne-in  (acot:midpt n-in e-in))
+      (acot:make-dim mid-ne-out mid-ne-in
+        (acot:pt-offset (acot:midpt mid-ne-out mid-ne-in)
+          (acot:normalize (list (- (car center) (car mid-ne-out))
+                                (- (cadr center) (cadr mid-ne-out))))
+          (- dim-off)))  ;; hacia fuera
+
+      T
     )
   )
 )
@@ -365,12 +318,10 @@
 ;;=================== COMANDO PRINCIPAL ===================;;
 
 (defun c:ACOTAR (/ ss i n ent ed tp tx vals
-                   tlst dlst tpt
-                   dlines result
-                   old-dimstyle old-clayer old-osm old-cmdecho
-                   cnt)
+                   tlst dlst tpt dlines result
+                   old-dimstyle old-clayer old-osm old-cmdecho cnt)
 
-  (princ "\nACOTAR PILARES v2 - Seleccione textos PHC/PHR y lineas del rombo: ")
+  (princ "\nACOTAR PILARES - Seleccione textos PHC/PHR y lineas del rombo: ")
   (setq ss (ssget))
 
   (if (null ss)
@@ -386,83 +337,62 @@
       (vla-StartUndoMark
         (vla-get-ActiveDocument (vlax-get-acad-object)))
 
-      ;; Crear capa z_ACOTADO si no existe
+      ;; Crear capa si no existe
       (if (not (tblsearch "LAYER" acot:*layer*))
-        (entmake (list '(0 . "LAYER") (cons 2 acot:*layer*) '(70 . 0) '(62 . 7)))
+        (entmake (list '(0 . "LAYER") (cons 2 acot:*layer*) '(70 . 0) '(62 . 1)))
       )
 
-      ;; Establecer estilo de cota y capa
+      ;; Establecer estilo de cota
       (if (tblsearch "DIMSTYLE" acot:*dimstyle*)
         (command "_.DIMSTYLE" "_Restore" acot:*dimstyle*)
-        (princ (strcat "\nAVISO: Estilo de cota '" acot:*dimstyle* "' no encontrado. Usando el actual."))
+        (princ (strcat "\nAVISO: Estilo '" acot:*dimstyle* "' no encontrado."))
       )
       (setvar "CLAYER" acot:*layer*)
 
       ;; Clasificar entidades
-      (setq tlst nil   ;; textos PHC/PHR
-            dlst nil   ;; lineas diagonales del rombo
-            n    (sslength ss)
-            i    0)
-
+      (setq tlst nil  dlst nil  n (sslength ss)  i 0)
       (repeat n
         (setq ent (ssname ss i)
               ed  (entget ent)
               tp  (cdr (assoc 0 ed)))
         (cond
-          ;; Texto que contiene PHC o PHR
           ((and (member tp '("TEXT" "MTEXT"))
                 (setq tx (cdr (assoc 1 ed)))
                 (or (vl-string-search "PHC" (strcase tx))
                     (vl-string-search "PHR" (strcase tx))))
-           (setq tlst (cons ent tlst))
-          )
-          ;; LINE: comprobar si es arista diagonal del rombo
+           (setq tlst (cons ent tlst)))
           ((and (= tp "LINE") (acot:is-diamond-edge ent))
-           (setq dlst (cons ent dlst))
-          )
+           (setq dlst (cons ent dlst)))
         )
         (setq i (1+ i))
       )
 
       (cond
         ((null tlst)
-         (princ "\nNo se encontraron textos PHC/PHR en la seleccion."))
+         (princ "\nNo se encontraron textos PHC/PHR."))
         ((null dlst)
-         (princ "\nNo se encontraron lineas diagonales del rombo en la seleccion."))
+         (princ "\nNo se encontraron lineas diagonales del rombo."))
         (T
          (setq cnt 0)
-
          (foreach tent tlst
            (setq ed   (entget tent)
                  tx   (cdr (assoc 1 ed))
                  vals (acot:parse tx))
-
            (if vals
              (progn
                (setq tpt (cdr (assoc 10 ed)))
-
-               ;; Buscar las 4 lineas del rombo mas cercano
                (setq dlines (acot:find-diamond-lines tpt dlst))
-
                (if dlines
-                 (progn
-                   (setq result
-                     (acot:annotate-pile
-                       dlines
-                       (car vals)     ;; left
-                       (cadr vals)    ;; right
-                       (caddr vals))) ;; top
-                   (if result
-                     (setq cnt (1+ cnt))
-                   )
+                 (if (acot:annotate-pile dlines
+                       (car vals) (cadr vals) (caddr vals))
+                   (setq cnt (1+ cnt))
                  )
-                 (princ (strcat "\nNo se encontro rombo (4 lineas) para: " tx))
+                 (princ (strcat "\nNo se encontro rombo para: " tx))
                )
              )
              (princ (strcat "\nFormato no reconocido: " tx))
            )
          )
-
          (princ (strcat "\n" (itoa cnt) " pilar(es) acotado(s)."))
         )
       )
