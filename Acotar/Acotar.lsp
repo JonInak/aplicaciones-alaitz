@@ -76,6 +76,39 @@
         (+ (cadr pt) (* (cadr dir) dist)))
 )
 
+;;; Normal interior (perpendicular al lado, apuntando hacia el centro)
+;;; Dado un lado A->B y un centro, devuelve la normal unitaria hacia dentro
+(defun acot:inward-normal (a b center / dx dy nx ny mp dot)
+  (setq dx (- (car b) (car a))
+        dy (- (cadr b) (cadr a)))
+  ;; Normal perpendicular (dos opciones: (-dy,dx) o (dy,-dx))
+  (setq nx (- dy)  ny dx)
+  ;; Elegir la que apunta hacia el centro
+  (setq mp (acot:midpt a b))
+  (setq dot (+ (* nx (- (car center) (car mp)))
+               (* ny (- (cadr center) (cadr mp)))))
+  (if (< dot 0)
+    (setq nx (- nx)  ny (- ny))
+  )
+  (acot:normalize (list nx ny))
+)
+
+;;; Interseccion de dos lineas definidas por punto+direccion
+;;; L1: p1 + t*d1, L2: p2 + t*d2
+;;; Devuelve punto de interseccion o nil
+(defun acot:line-intersect (p1 d1 p2 d2 / cross tp)
+  (setq cross (- (* (car d1) (cadr d2)) (* (cadr d1) (car d2))))
+  (if (> (abs cross) 1e-10)
+    (progn
+      (setq tp (/ (- (* (car d2) (- (cadr p1) (cadr p2)))
+                     (* (cadr d2) (- (car p1) (car p2))))
+                  cross))
+      (list (+ (car p1) (* tp (car d1)))
+            (+ (cadr p1) (* tp (cadr d1))))
+    )
+  )
+)
+
 ;;=================== PARSEO ===================;;
 
 (defun acot:normalize-num (s / p)
@@ -156,9 +189,9 @@
                        (list (car p2) (cadr p2))))
       (setq ang (rem (* (/ ang pi) 180.0) 180.0))
       (if (< ang 0) (setq ang (+ ang 180.0)))
-      ;; Solo angulos diagonales: 20-70 o 110-160 grados
-      (or (and (> ang 20.0) (< ang 70.0))
-          (and (> ang 110.0) (< ang 160.0)))
+      ;; Angulos diagonales: 15-85 o 95-165 grados (excluye H/V)
+      (or (and (> ang 15.0) (< ang 85.0))
+          (and (> ang 95.0) (< ang 165.0)))
     )
   )
 )
@@ -277,7 +310,10 @@
       (if ent
         (progn
           (setq ent (entget ent))
-          (setq ent (subst (cons 1 txt-override) (assoc 1 ent) ent))
+          (if (assoc 1 ent)
+            (setq ent (subst (cons 1 txt-override) (assoc 1 ent) ent))
+            (setq ent (append ent (list (cons 1 txt-override))))
+          )
           (entmod ent)
         )
       )
@@ -290,7 +326,10 @@
 (defun acot:annotate-pile (diamond-lines lv rv tv /
   verts nesw center side-len scale
   n e s w
-  perp-offset vertex-offset dir-to-cen
+  perp-offset
+  n-ne n-es n-sw n-wn
+  ne-off es-off sw-off wn-off
+  d-ne d-es d-sw d-wn
   n-in e-in s-in w-in
   mid-ne-out mid-ne-in
   dim-off mid-sw mid-se
@@ -315,36 +354,42 @@
       (setq side-len (/ (+ (acot:dist2d n e) (acot:dist2d e s)
                            (acot:dist2d s w) (acot:dist2d w n)) 4.0))
 
-      ;; Escala propia: cuantas unidades reales por unidad de dibujo
-      ;; PHC 120.6: scale = 120/24 = 5
-      ;; PHR 16.12.6: scale = 160/24 = 6.67 (izq), 120/24 = 5 (der)
-      ;; Para el offset del rombo interior usamos la media de lv y rv
+      ;; Escala: media de lv y rv / lado medio
       (setq scale (/ (+ lv rv) (* 2.0 side-len)))
 
-      ;; Offset perpendicular a los lados (en unidades de dibujo)
+      ;; Offset perpendicular UNIFORME a todos los lados
       (setq perp-offset (/ tv scale))
 
-      ;; Para mover vertices: offset_vertice = offset_perpendicular * sqrt(2)
-      ;; (geometria de un cuadrado: inset perpendicular d -> vertices se mueven d*sqrt(2))
-      (setq vertex-offset (* perp-offset (sqrt 2.0)))
+      ;; --- ROMBO INTERIOR (inset por lados) ---
+      ;; Calcular normal interior de cada lado
+      (setq n-ne (acot:inward-normal n e center))  ;; lado NE
+      (setq n-es (acot:inward-normal e s center))  ;; lado ES
+      (setq n-sw (acot:inward-normal s w center))  ;; lado SW
+      (setq n-wn (acot:inward-normal w n center))  ;; lado WN
 
-      ;; --- ROMBO INTERIOR ---
-      ;; Mover cada vertice hacia el centro por vertex-offset
-      (setq dir-to-cen (acot:normalize (list (- (car center) (car n))
-                                              (- (cadr center) (cadr n)))))
-      (setq n-in (acot:pt-offset n dir-to-cen vertex-offset))
+      ;; Desplazar cada lado perpendicular por perp-offset
+      ;; Lado NE desplazado: pasa por (N + normal*offset)
+      (setq ne-off (acot:pt-offset n n-ne perp-offset))
+      (setq es-off (acot:pt-offset e n-es perp-offset))
+      (setq sw-off (acot:pt-offset s n-sw perp-offset))
+      (setq wn-off (acot:pt-offset w n-wn perp-offset))
 
-      (setq dir-to-cen (acot:normalize (list (- (car center) (car e))
-                                              (- (cadr center) (cadr e)))))
-      (setq e-in (acot:pt-offset e dir-to-cen vertex-offset))
+      ;; Direccion de cada lado
+      (setq d-ne (list (- (car e) (car n)) (- (cadr e) (cadr n))))
+      (setq d-es (list (- (car s) (car e)) (- (cadr s) (cadr e))))
+      (setq d-sw (list (- (car w) (car s)) (- (cadr w) (cadr s))))
+      (setq d-wn (list (- (car n) (car w)) (- (cadr n) (cadr w))))
 
-      (setq dir-to-cen (acot:normalize (list (- (car center) (car s))
-                                              (- (cadr center) (cadr s)))))
-      (setq s-in (acot:pt-offset s dir-to-cen vertex-offset))
+      ;; Vertices interiores = interseccion de lados desplazados adyacentes
+      (setq n-in (acot:line-intersect wn-off d-wn ne-off d-ne))  ;; WN ∩ NE
+      (setq e-in (acot:line-intersect ne-off d-ne es-off d-es))  ;; NE ∩ ES
+      (setq s-in (acot:line-intersect es-off d-es sw-off d-sw))  ;; ES ∩ SW
+      (setq w-in (acot:line-intersect sw-off d-sw wn-off d-wn))  ;; SW ∩ WN
 
-      (setq dir-to-cen (acot:normalize (list (- (car center) (car w))
-                                              (- (cadr center) (cadr w)))))
-      (setq w-in (acot:pt-offset w dir-to-cen vertex-offset))
+      ;; Verificar que todas las intersecciones existen
+      (if (not (and n-in e-in s-in w-in))
+        (progn (princ "\nError: no se pudo calcular rombo interior.") nil)
+        (progn
 
       ;; Dibujar rombo interior (4 lados)
       (acot:mk-line n-in e-in acot:*layer* acot:*color*)
@@ -389,6 +434,7 @@
         tv-txt)
 
       T
+      )) ;; cierra if interseccion + progn
     )
   )
 )
