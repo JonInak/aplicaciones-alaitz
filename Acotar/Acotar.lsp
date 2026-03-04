@@ -268,23 +268,31 @@
   unique
 )
 
-;;; Identifica N/E/S/W por coordenadas (asignacion unica)
-;;; Ordena por Y: S=min_Y, N=max_Y, luego E/W de los 2 restantes por X
-(defun acot:identify-nesw (verts / sorted-y s-vert n-vert mid1 mid2 e-vert w-vert)
-  (setq sorted-y (vl-sort verts '(lambda (a b) (< (cadr a) (cadr b)))))
-  (setq s-vert (car sorted-y))        ;; vertice con menor Y
-  (setq n-vert (last sorted-y))       ;; vertice con mayor Y
-  (setq mid1   (cadr sorted-y))       ;; 2do vertice
-  (setq mid2   (caddr sorted-y))      ;; 3er vertice
-  ;; De los dos intermedios, E = mayor X, W = menor X
-  (if (> (car mid1) (car mid2))
-    (setq e-vert mid1  w-vert mid2)
-    (setq e-vert mid2  w-vert mid1)
-  )
-  (list (cons "N" n-vert)
-        (cons "S" s-vert)
-        (cons "E" e-vert)
-        (cons "W" w-vert))
+;;; Identifica N/E/S/W por coordenadas
+;;; Ordena vertices por angulo desde el centro (CCW) para garantizar
+;;; que N->E->S->W sigue el perimetro (sin cruces diagonales)
+(defun acot:identify-nesw (verts / center sorted n-idx i max-y)
+  ;; Centro geometrico
+  (setq center (list
+    (/ (apply '+ (mapcar 'car verts)) 4.0)
+    (/ (apply '+ (mapcar 'cadr verts)) 4.0)))
+  ;; Ordenar CCW por angulo desde el centro
+  (setq sorted (vl-sort verts
+    '(lambda (a b)
+      (< (angle center a) (angle center b)))))
+  ;; Buscar vertice con mayor Y = Norte
+  (setq max-y -1e99  n-idx 0  i 0)
+  (foreach v sorted
+    (if (> (cadr v) max-y)
+      (setq max-y (cadr v)  n-idx i))
+    (setq i (1+ i)))
+  ;; Desde N en sentido CW: N, E, S, W
+  ;; CW = retroceder en CCW: E = (n-1), S = (n-2), W = (n+1)
+  (list
+    (cons "N" (nth n-idx sorted))
+    (cons "E" (nth (rem (+ n-idx 3) 4) sorted))
+    (cons "S" (nth (rem (+ n-idx 2) 4) sorted))
+    (cons "W" (nth (rem (+ n-idx 1) 4) sorted)))
 )
 
 ;;=================== DIBUJO ===================;;
