@@ -169,6 +169,7 @@
           (setq result (cons ent result))
         )
       )
+      (princ (strcat "\n  [DEBUG] Lineas agrupadas cerca del texto: " (itoa (length result))))
       (if (= (length result) 4) result nil)
     )
   )
@@ -210,11 +211,26 @@
       (cons 11 (list (car b) (cadr b) 0.0))))
 )
 
-(defun acot:make-dim (pt1 pt2 dim-pt)
+;;; Crea cota DIMALIGNED con texto override
+;;; Si txt-override es nil, usa la medida real
+(defun acot:make-dim (pt1 pt2 dim-pt txt-override / ent)
   (command "_.DIMALIGNED"
     (list (car pt1) (cadr pt1) 0.0)
     (list (car pt2) (cadr pt2) 0.0)
     (list (car dim-pt) (cadr dim-pt) 0.0))
+  ;; Si hay texto override, modificar la ultima entidad creada
+  (if txt-override
+    (progn
+      (setq ent (entlast))
+      (if ent
+        (progn
+          (setq ent (entget ent))
+          (setq ent (subst (cons 1 txt-override) (assoc 1 ent) ent))
+          (entmod ent)
+        )
+      )
+    )
+  )
 )
 
 ;;=================== ACOTACION PRINCIPAL ===================;;
@@ -225,7 +241,8 @@
   perp-offset vertex-offset dir-to-cen
   n-in e-in s-in w-in
   mid-ne-out mid-ne-in
-  dim-off mid-sw mid-se)
+  dim-off mid-sw mid-se
+  lv-txt rv-txt tv-txt)
 
   (setq verts (acot:extract-vertices diamond-lines))
   (if (/= (length verts) 4)
@@ -246,8 +263,11 @@
       (setq side-len (/ (+ (acot:dist2d n e) (acot:dist2d e s)
                            (acot:dist2d s w) (acot:dist2d w n)) 4.0))
 
-      ;; Factor de escala: cota100 muestra (distancia_dibujo * scale) = valor_real
-      (setq scale (/ lv side-len))
+      ;; Escala propia: cuantas unidades reales por unidad de dibujo
+      ;; PHC 120.6: scale = 120/24 = 5
+      ;; PHR 16.12.6: scale = 160/24 = 6.67 (izq), 120/24 = 5 (der)
+      ;; Para el offset del rombo interior usamos la media de lv y rv
+      (setq scale (/ (+ lv rv) (* 2.0 side-len)))
 
       ;; Offset perpendicular a los lados (en unidades de dibujo)
       (setq perp-offset (/ tv scale))
@@ -280,8 +300,13 @@
       (acot:mk-line s-in w-in acot:*layer* acot:*color*)
       (acot:mk-line w-in n-in acot:*layer* acot:*color*)
 
-      ;; --- COTAS ALINEADAS ---
+      ;; --- COTAS ALINEADAS (con texto override) ---
       (setq dim-off (* side-len 0.15))
+
+      ;; Formatear valores para texto: entero si no tiene decimales
+      (setq lv-txt (if (= lv (fix lv)) (itoa (fix lv)) (rtos lv 2 1)))
+      (setq rv-txt (if (= rv (fix rv)) (itoa (fix rv)) (rtos rv 2 1)))
+      (setq tv-txt (if (= tv (fix tv)) (itoa (fix tv)) (rtos tv 2 1)))
 
       ;; Cota izquierda: S -> W (muestra left_value, ej: "120")
       (setq mid-sw (acot:midpt s w))
@@ -289,7 +314,8 @@
         (acot:pt-offset mid-sw
           (acot:normalize (list (- (car center) (car mid-sw))
                                 (- (cadr center) (cadr mid-sw))))
-          (- dim-off)))  ;; hacia fuera
+          (- dim-off))
+        lv-txt)
 
       ;; Cota derecha: S -> E (muestra right_value, ej: "120")
       (setq mid-se (acot:midpt s e))
@@ -297,18 +323,18 @@
         (acot:pt-offset mid-se
           (acot:normalize (list (- (car center) (car mid-se))
                                 (- (cadr center) (cadr mid-se))))
-          (- dim-off)))  ;; hacia fuera
+          (- dim-off))
+        rv-txt)
 
-      ;; Cota superior: distancia perpendicular entre lado NE exterior e interior
-      ;; Medir desde midpoint del lado NE exterior al midpoint del lado NE interior
-      ;; Esto da exactamente perp-offset en dibujo -> muestra tv con cota100
+      ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
       (setq mid-ne-in  (acot:midpt n-in e-in))
       (acot:make-dim mid-ne-out mid-ne-in
         (acot:pt-offset (acot:midpt mid-ne-out mid-ne-in)
           (acot:normalize (list (- (car center) (car mid-ne-out))
                                 (- (cadr center) (cadr mid-ne-out))))
-          (- dim-off)))  ;; hacia fuera
+          (- dim-off))
+        tv-txt)
 
       T
     )
@@ -363,9 +389,22 @@
            (setq tlst (cons ent tlst)))
           ((and (= tp "LINE") (acot:is-diamond-edge ent))
            (setq dlst (cons ent dlst)))
+          ((= tp "LINE")
+           ;; Debug: mostrar por que se rechazo esta linea
+           (setq ed (entget ent))
+           (princ (strcat "\n  [DEBUG] LINE rechazada: long="
+             (rtos (acot:dist2d (cdr (assoc 10 ed)) (cdr (assoc 11 ed))) 2 1)
+             " ang="
+             (rtos (rem (* (/ (angle
+               (list (car (cdr (assoc 10 ed))) (cadr (cdr (assoc 10 ed))))
+               (list (car (cdr (assoc 11 ed))) (cadr (cdr (assoc 11 ed)))))
+               pi) 180.0) 180.0) 2 1)
+             "°")))
         )
         (setq i (1+ i))
       )
+      (princ (strcat "\n  Textos PHC/PHR: " (itoa (length tlst))
+                     "  Lineas rombo: " (itoa (length dlst))))
 
       (cond
         ((null tlst)
