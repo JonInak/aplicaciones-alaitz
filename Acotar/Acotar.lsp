@@ -22,10 +22,33 @@
 
 (setq acot:*side-min* 10.0)       ;; Long. minima arista rombo
 (setq acot:*side-max* 60.0)       ;; Long. maxima arista rombo
-(setq acot:*cluster-radius* 40.0) ;; Radio agrupacion lineas del mismo rombo
-(setq acot:*layer* "z_ACOTADO")   ;; Capa para anotaciones
+(setq acot:*cluster-radius* 100.0) ;; Radio agrupacion lineas del mismo rombo
+(setq acot:*layer* "z_ACOTADO")    ;; Capa para anotaciones
+(setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
 (setq acot:*color* 1)             ;; Color rojo
+(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")
+
+;;=================== LOG ===================;;
+
+(defun acot:log-open ()
+  (setq acot:*logfp* (open acot:*logfile* "w"))
+  (if acot:*logfp*
+    (princ "=== ACOTAR LOG ===\n" acot:*logfp*)
+  )
+)
+
+(defun acot:log (msg)
+  (if acot:*logfp*
+    (princ (strcat msg "\n") acot:*logfp*)
+  )
+)
+
+(defun acot:log-close ()
+  (if acot:*logfp*
+    (progn (close acot:*logfp*) (setq acot:*logfp* nil))
+  )
+)
 
 ;;=================== UTILIDADES MATEMATICAS ===================;;
 
@@ -150,26 +173,55 @@
 )
 
 ;;; Busca las 4 lineas del rombo mas cercano al punto dado
+;;; Estrategia: encontrar linea mas cercana, estimar centro del rombo
+;;; desde sus endpoints, luego agrupar las demas lineas alrededor del centro
 (defun acot:find-diamond-lines (pt diamond-lines /
-  best-d best-mp ent mp d result)
+  best-d best-ent ent mp d pts center result)
+  ;; Paso 1: encontrar la linea mas cercana al texto
   (setq best-d 1e99)
   (foreach ent diamond-lines
     (setq mp (apply 'acot:midpt (acot:line-pts ent))
           d  (acot:dist2d pt mp))
     (if (< d best-d)
-      (setq best-d d  best-mp mp)
+      (setq best-d d  best-ent ent)
     )
   )
-  (if best-mp
+  (if best-ent
     (progn
+      ;; Paso 2: estimar centro del rombo desde los endpoints de la linea mas cercana
+      ;; El centro del rombo esta aprox en el midpoint de la linea
+      ;; Pero mejor: recoger TODAS las lineas cercanas iterativamente
+      ;; Primero, agrupar con radio generoso desde el midpoint de la mas cercana
+      (setq center (apply 'acot:midpt (acot:line-pts best-ent)))
       (setq result nil)
       (foreach ent diamond-lines
         (setq mp (apply 'acot:midpt (acot:line-pts ent)))
-        (if (< (acot:dist2d best-mp mp) acot:*cluster-radius*)
+        (if (< (acot:dist2d center mp) acot:*cluster-radius*)
           (setq result (cons ent result))
         )
       )
-      (princ (strcat "\n  [DEBUG] Lineas agrupadas cerca del texto: " (itoa (length result))))
+      ;; Si encontramos >= 4, recalcular centro real y filtrar mas fino
+      (if (>= (length result) 4)
+        (progn
+          ;; Calcular centro real: promedio de TODOS los endpoints
+          (setq pts nil)
+          (foreach ent result
+            (setq pts (append (acot:line-pts ent) pts)))
+          (setq center (list
+            (/ (apply '+ (mapcar 'car pts)) (float (length pts)))
+            (/ (apply '+ (mapcar 'cadr pts)) (float (length pts)))))
+          ;; Re-agrupar con el centro real
+          (setq result nil)
+          (foreach ent diamond-lines
+            (setq mp (apply 'acot:midpt (acot:line-pts ent)))
+            (if (< (acot:dist2d center mp) acot:*cluster-radius*)
+              (setq result (cons ent result))
+            )
+          )
+        )
+      )
+      (acot:log (strcat "  Lineas agrupadas: " (itoa (length result))
+                        " (centro=" (rtos (car center) 2 1) "," (rtos (cadr center) 2 1) ")"))
       (if (= (length result) 4) result nil)
     )
   )
@@ -375,6 +427,10 @@
       )
       (setvar "CLAYER" acot:*layer*)
 
+      ;; Abrir log
+      (acot:log-open)
+      (acot:log (strcat "Seleccion: " (itoa (sslength ss)) " entidades"))
+
       ;; Clasificar entidades
       (setq tlst nil  dlst nil  n (sslength ss)  i 0)
       (repeat n
@@ -386,25 +442,43 @@
                 (setq tx (cdr (assoc 1 ed)))
                 (or (vl-string-search "PHC" (strcase tx))
                     (vl-string-search "PHR" (strcase tx))))
-           (setq tlst (cons ent tlst)))
-          ((and (= tp "LINE") (acot:is-diamond-edge ent))
-           (setq dlst (cons ent dlst)))
-          ((= tp "LINE")
-           ;; Debug: mostrar por que se rechazo esta linea
-           (setq ed (entget ent))
-           (princ (strcat "\n  [DEBUG] LINE rechazada: long="
+           (setq tlst (cons ent tlst))
+           (acot:log (strcat "  TEXT ok: \"" tx "\" pos=("
+             (rtos (car (cdr (assoc 10 ed))) 2 1) ","
+             (rtos (cadr (cdr (assoc 10 ed))) 2 1) ")")))
+          ((and (= tp "LINE")
+                (= (strcase (cdr (assoc 8 ed))) (strcase acot:*src-layer*))
+                (acot:is-diamond-edge ent))
+           (setq dlst (cons ent dlst))
+           (acot:log (strcat "  LINE ok: long="
              (rtos (acot:dist2d (cdr (assoc 10 ed)) (cdr (assoc 11 ed))) 2 1)
              " ang="
              (rtos (rem (* (/ (angle
                (list (car (cdr (assoc 10 ed))) (cadr (cdr (assoc 10 ed))))
                (list (car (cdr (assoc 11 ed))) (cadr (cdr (assoc 11 ed)))))
                pi) 180.0) 180.0) 2 1)
-             "°")))
+             " mid=("
+             (rtos (/ (+ (car (cdr (assoc 10 ed))) (car (cdr (assoc 11 ed)))) 2.0) 2 1)
+             ","
+             (rtos (/ (+ (cadr (cdr (assoc 10 ed))) (cadr (cdr (assoc 11 ed)))) 2.0) 2 1)
+             ")")))
+          ((= tp "LINE")
+           (setq ed (entget ent))
+           (acot:log (strcat "  LINE rechazada: long="
+             (rtos (acot:dist2d (cdr (assoc 10 ed)) (cdr (assoc 11 ed))) 2 1)
+             " ang="
+             (rtos (rem (* (/ (angle
+               (list (car (cdr (assoc 10 ed))) (cadr (cdr (assoc 10 ed))))
+               (list (car (cdr (assoc 11 ed))) (cadr (cdr (assoc 11 ed)))))
+               pi) 180.0) 180.0) 2 1)
+             " capa=" (cdr (assoc 8 ed)))))
+          (T
+           (acot:log (strcat "  Ignorada: tipo=" tp)))
         )
         (setq i (1+ i))
       )
-      (princ (strcat "\n  Textos PHC/PHR: " (itoa (length tlst))
-                     "  Lineas rombo: " (itoa (length dlst))))
+      (acot:log (strcat "Resumen: " (itoa (length tlst)) " textos, "
+                        (itoa (length dlst)) " lineas rombo"))
 
       (cond
         ((null tlst)
@@ -417,24 +491,47 @@
            (setq ed   (entget tent)
                  tx   (cdr (assoc 1 ed))
                  vals (acot:parse tx))
+           (acot:log (strcat "\n--- Procesando: \"" tx "\" ---"))
            (if vals
              (progn
+               (acot:log (strcat "  Parseado: lv=" (rtos (car vals) 2 1)
+                                 " rv=" (rtos (cadr vals) 2 1)
+                                 " tv=" (rtos (caddr vals) 2 1)))
                (setq tpt (cdr (assoc 10 ed)))
+               (acot:log (strcat "  Punto texto: ("
+                 (rtos (car tpt) 2 1) "," (rtos (cadr tpt) 2 1) ")"))
                (setq dlines (acot:find-diamond-lines tpt dlst))
                (if dlines
-                 (if (acot:annotate-pile dlines
-                       (car vals) (cadr vals) (caddr vals))
-                   (setq cnt (1+ cnt))
+                 (progn
+                   (acot:log "  Rombo encontrado -> acotando")
+                   (if (acot:annotate-pile dlines
+                         (car vals) (cadr vals) (caddr vals))
+                     (progn
+                       (setq cnt (1+ cnt))
+                       (acot:log "  OK acotado"))
+                     (acot:log "  ERROR al acotar")
+                   )
                  )
-                 (princ (strcat "\nNo se encontro rombo para: " tx))
+                 (progn
+                   (acot:log "  FALLO: no se encontro rombo (4 lineas)")
+                   (princ (strcat "\nNo se encontro rombo para: " tx))
+                 )
                )
              )
-             (princ (strcat "\nFormato no reconocido: " tx))
+             (progn
+               (acot:log (strcat "  FALLO: formato no reconocido"))
+               (princ (strcat "\nFormato no reconocido: " tx))
+             )
            )
          )
+         (acot:log (strcat "\nResultado: " (itoa cnt) " pilar(es) acotado(s)"))
          (princ (strcat "\n" (itoa cnt) " pilar(es) acotado(s)."))
         )
       )
+
+      ;; Cerrar log
+      (acot:log-close)
+      (princ (strcat "\nLog guardado en: " acot:*logfile*))
 
       ;; Restaurar estado
       (setvar "CLAYER" old-clayer)
