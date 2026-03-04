@@ -177,23 +177,14 @@
 
 ;;=================== DETECCION DEL ROMBO ===================;;
 
-;;; Comprueba si una LINE es arista diagonal del rombo
-(defun acot:is-diamond-edge (ent / ed p1 p2 len ang)
+;;; Comprueba si una LINE es arista del rombo (solo por longitud)
+;;; El filtro de capa se aplica en el bucle principal
+(defun acot:is-diamond-edge (ent / ed p1 p2 len)
   (setq ed  (entget ent)
         p1  (cdr (assoc 10 ed))
         p2  (cdr (assoc 11 ed))
         len (acot:dist2d p1 p2))
-  (if (and (> len acot:*side-min*) (< len acot:*side-max*))
-    (progn
-      (setq ang (angle (list (car p1) (cadr p1))
-                       (list (car p2) (cadr p2))))
-      (setq ang (rem (* (/ ang pi) 180.0) 180.0))
-      (if (< ang 0) (setq ang (+ ang 180.0)))
-      ;; Angulos diagonales: 15-85 o 95-165 grados (excluye H/V)
-      (or (and (> ang 15.0) (< ang 85.0))
-          (and (> ang 95.0) (< ang 165.0)))
-    )
-  )
+  (and (> len acot:*side-min*) (< len acot:*side-max*))
 )
 
 ;;; Obtiene los 2 endpoints 2D de una LINE
