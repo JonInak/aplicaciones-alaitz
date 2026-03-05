@@ -20,16 +20,15 @@
 
 ;;=================== CONFIGURACION ===================;;
 
-(setq acot:*side-min* 10.0)       ;; Long. minima arista rombo
+(setq acot:*side-min* 0.1)        ;; Long. minima arista rombo
 (setq acot:*side-max* 65.0)       ;; Long. maxima arista rombo
-(setq acot:*cluster-radius* 100.0) ;; Radio agrupacion lineas del mismo rombo
 (setq acot:*layer* "z_ACOTADO")    ;; Capa para anotaciones
 (setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
 (setq acot:*color* 1)             ;; Color rojo
 (setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
 (setq acot:*txt-off-ratio* 0.5) ;; Offset texto = ratio * lado_rombo (proporcional)
-(setq acot:*logfile* nil)  ;; Poner ruta para activar log: "C:/Users/Jon/.../acotar_log.txt"
+(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")  ;; Poner nil para desactivar log
 
 ;;=================== LOG ===================;;
 
@@ -206,7 +205,7 @@
 ;;; Estrategia: encontrar linea mas cercana, estimar centro del rombo
 ;;; desde sus endpoints, luego agrupar las demas lineas alrededor del centro
 (defun acot:find-diamond-lines (pt diamond-lines /
-  best-d best-ent ent mp d pts center result)
+  best-d best-ent ent mp d pts center result cluster-r best-len)
   ;; Paso 1: encontrar la linea mas cercana al texto
   (setq best-d 1e99)
   (foreach ent diamond-lines
@@ -218,15 +217,16 @@
   )
   (if best-ent
     (progn
-      ;; Paso 2: estimar centro del rombo desde los endpoints de la linea mas cercana
-      ;; El centro del rombo esta aprox en el midpoint de la linea
-      ;; Pero mejor: recoger TODAS las lineas cercanas iterativamente
-      ;; Primero, agrupar con radio generoso desde el midpoint de la mas cercana
+      ;; Radio de agrupacion adaptativo: 3x longitud del lado mas cercano
+      (setq best-len (apply 'acot:dist2d (acot:line-pts best-ent)))
+      (setq cluster-r (* 3.0 best-len))
+      (acot:log (strcat "  cluster-r=" (rtos cluster-r 2 2) " (lado=" (rtos best-len 2 2) ")"))
+      ;; Paso 2: agrupar lineas cercanas al midpoint de la mas cercana
       (setq center (apply 'acot:midpt (acot:line-pts best-ent)))
       (setq result nil)
       (foreach ent diamond-lines
         (setq mp (apply 'acot:midpt (acot:line-pts ent)))
-        (if (< (acot:dist2d center mp) acot:*cluster-radius*)
+        (if (< (acot:dist2d center mp) cluster-r)
           (setq result (cons ent result))
         )
       )
@@ -244,7 +244,7 @@
           (setq result nil)
           (foreach ent diamond-lines
             (setq mp (apply 'acot:midpt (acot:line-pts ent)))
-            (if (< (acot:dist2d center mp) acot:*cluster-radius*)
+            (if (< (acot:dist2d center mp) cluster-r)
               (setq result (cons ent result))
             )
           )
@@ -657,7 +657,9 @@
 
       ;; Cerrar log
       (acot:log-close)
-      (princ (strcat "\nLog guardado en: " acot:*logfile*))
+      (if acot:*logfile*
+        (princ (strcat "\nLog guardado en: " acot:*logfile*))
+      )
 
       ;; Restaurar estado
       (setvar "CLAYER" old-clayer)

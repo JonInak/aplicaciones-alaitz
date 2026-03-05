@@ -7,7 +7,7 @@
   Modo de uso:
     1. Cargar con APPLOAD
     2. Ejecutar comando NIVELAR
-    3. Primera vez: seleccionar bloque de referencia (se explota y calibra la escala)
+    3. Primera vez: calibrar haciendo clic en dos lineas de nivel conocidas
     4. Seleccionar marcadores de nivel, moverlos, el valor se recalcula
 
   Comandos:
@@ -21,7 +21,6 @@
 
 ;;=================== CONFIGURACION ===================;;
 
-(setq niv:*ref-layer* "z_PL_FORJADOS")     ;; Capa del bloque de referencia
 (setq niv:*mark-layer* "z_COTAS NIVELES")  ;; Capa de los marcadores
 (setq niv:*decimals* 2)                     ;; Decimales en la cota
 
@@ -144,69 +143,58 @@
 
 ;;=================== ESCALA ===================;;
 
-;;; Explota bloque de referencia y construye la escala
-(defun niv:build-scale (/ ss last-ent ent ed etype txt elev y pts p1 p2)
-  (princ "\nSeleccione el bloque de referencia de niveles: ")
-  (setq ss (ssget ":S" (list (cons 8 niv:*ref-layer*))))
-  (if (null ss)
-    (progn (princ "\nNo se selecciono nada.") nil)
+;;; Calibra la escala pidiendo al usuario que haga clic en dos lineas de nivel
+(defun niv:build-scale (/ pt1 elev1 pt2 elev2 dy)
+  (princ "\n--- CALIBRACION DE ESCALA ---")
+  (princ "\nHaga clic en dos lineas de nivel conocidas de la escala.")
+
+  ;; Primer punto
+  (setq pt1 (getpoint "\nClic en la linea del primer nivel (ej: sobre la raya del +43): "))
+  (if (null pt1) (progn (princ "\nCancelado.") nil)
     (progn
-      ;; Guardar ultimo entity name antes de explotar
-      (setq last-ent (entlast))
-
-      ;; Explotar bloque
-      (command "_.EXPLODE" ss "")
-
-      ;; Buscar textos de nivel entre las entidades nuevas
-      (setq pts '())
-      (setq ent (entnext last-ent))
-      (while ent
-        (setq ed (entget ent))
-        (setq etype (cdr (assoc 0 ed)))
-        (if (or (= etype "TEXT") (= etype "MTEXT"))
-          (progn
-            (setq txt (cdr (assoc 1 ed)))
-            (setq elev (if (niv:level-text-p txt) (niv:parse-level txt) nil))
-            (if elev
-              (progn
-                (setq y (cadr (cdr (assoc 10 ed))))
-                (setq pts (cons (cons elev y) pts))
+      (setq elev1 (getreal "\nValor de ese nivel (ej: 43): "))
+      (if (null elev1) (progn (princ "\nCancelado.") nil)
+        (progn
+          ;; Segundo punto
+          (setq pt2 (getpoint "\nClic en la linea del segundo nivel (ej: sobre la raya del +44): "))
+          (if (null pt2) (progn (princ "\nCancelado.") nil)
+            (progn
+              (setq elev2 (getreal "\nValor de ese nivel (ej: 44): "))
+              (if (null elev2) (progn (princ "\nCancelado.") nil)
+                (progn
+                  (setq dy (- (cadr pt2) (cadr pt1)))
+                  (if (< (abs dy) 1e-6)
+                    (progn (princ "\nError: Los dos puntos tienen la misma Y.") nil)
+                    (progn
+                      (setq niv:*elev-per-y* (/ (- elev2 elev1) dy))
+                      (setq niv:*scale*
+                        (list (cons elev1 (cadr pt1))
+                              (cons elev2 (cadr pt2))))
+                      (princ (strcat "\nEscala calibrada: "
+                                     (niv:format-level elev1 nil) " a "
+                                     (niv:format-level elev2 nil)
+                                     " | Factor: " (rtos niv:*elev-per-y* 2 6) " m/u"))
+                      T
+                    )
+                  )
+                )
               )
             )
           )
         )
-        (setq ent (entnext ent))
-      )
-
-      ;; Ordenar por elevacion
-      (setq niv:*scale*
-        (vl-sort pts '(lambda (a b) (< (car a) (car b))))
-      )
-
-      ;; Calcular factor de escala (elevacion por unidad Y)
-      (if (>= (length niv:*scale*) 2)
-        (progn
-          (setq p1 (car niv:*scale*))
-          (setq p2 (last niv:*scale*))
-          (setq niv:*elev-per-y*
-            (/ (- (car p2) (car p1))
-               (- (cdr p2) (cdr p1)))
-          )
-          (princ (strcat "\nEscala calibrada: "
-                         (itoa (length niv:*scale*)) " niveles ("
-                         (niv:format-level (car p1) nil) " a "
-                         (niv:format-level (car p2) nil) ")"
-                         " | Factor: " (rtos niv:*elev-per-y* 2 6) " m/u"))
-          T
-        )
-        (progn
-          (princ "\nError: No se detectaron textos de nivel tras explotar.")
-          (princ "\nSi hay sub-bloques, explote manualmente primero y reintente.")
-          (setq niv:*scale* nil)
-          nil
-        )
       )
     )
+  )
+)
+
+;;; Calcula elevacion desde coordenada Y usando la escala calibrada
+(defun niv:y-to-elev (y / p1)
+  (if (and niv:*scale* niv:*elev-per-y*)
+    (progn
+      (setq p1 (car niv:*scale*))
+      (+ (car p1) (* (- y (cdr p1)) niv:*elev-per-y*))
+    )
+    nil
   )
 )
 
@@ -214,7 +202,7 @@
 
 (defun c:NIVELAR (/ ss i ent ed txt etype block-cota
                     level-ent level-type old-level-str
-                    base-pt dest-pt delta-y old-elev new-elev new-txt
+                    base-pt dest-pt new-elev new-txt
                     continue)
 
   ;; Fase 1: Calibrar escala si no existe
@@ -279,21 +267,19 @@
         )
 
         ;; Pedir puntos de movimiento
-        (setq base-pt (getpoint "\nPunto base (punta de flecha): "))
+        (setq base-pt (getpoint "\nPunto base (linea de la punta del triangulo): "))
         (if base-pt
           (progn
-            (setq dest-pt (getpoint base-pt "\nNuevo punto: "))
+            (setq dest-pt (getpoint base-pt "\nNuevo punto (donde va el nivel): "))
             (if dest-pt
               (progn
                 ;; Mover entidades
                 (command "_.MOVE" ss "" base-pt dest-pt)
 
-                ;; Calcular y actualizar nivel
+                ;; Calcular nivel desde posicion Y absoluta del destino
                 (if level-ent
                   (progn
-                    (setq old-elev (niv:parse-level old-level-str))
-                    (setq delta-y (- (cadr dest-pt) (cadr base-pt)))
-                    (setq new-elev (+ old-elev (* delta-y niv:*elev-per-y*)))
+                    (setq new-elev (niv:y-to-elev (cadr dest-pt)))
                     (setq new-txt (niv:format-level new-elev old-level-str))
 
                     ;; Actualizar la entidad
