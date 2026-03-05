@@ -319,6 +319,66 @@
   (princ)
 )
 
+;;=================== NIVELAR TODOS ===================;;
+
+;;; Comando NIVTODOS: actualiza el nivel de todos los bloques seleccionados
+;;; segun su posicion Y actual (sin moverlos)
+(defun c:NIVTODOS (/ ss i ent ed etype block-cota
+                     attrib-ent old-txt old-elev new-elev new-txt
+                     ins-pt count)
+
+  ;; Verificar escala
+  (if (or (null niv:*scale*) (< (length niv:*scale*) 2))
+    (progn
+      (princ "\nNo hay escala calibrada. Ejecute NIVELAR primero para calibrar.")
+      (exit)
+    )
+  )
+
+  (princ "\nSeleccione los bloques de cota a actualizar [Enter=salir]: ")
+  (setq ss (ssget '((0 . "INSERT") (2 . "COTA alzado"))))
+  (if (null ss)
+    (progn (princ "\nNo se selecciono nada.") (exit))
+  )
+
+  (command "_.UNDO" "_Begin")
+
+  (setq count 0)
+  (setq i 0)
+  (while (< i (sslength ss))
+    (setq ent (ssname ss i))
+    (setq block-cota (niv:get-block-cota ent))
+
+    (if (and block-cota (niv:level-text-p (cdr block-cota)))
+      (progn
+        (setq attrib-ent (car block-cota))
+        (setq old-txt (cdr block-cota))
+
+        ;; Usar la posicion Y del punto de insercion del bloque
+        (setq ed (entget ent))
+        (setq ins-pt (cdr (assoc 10 ed)))
+        (setq new-elev (niv:y-to-elev (cadr ins-pt)))
+
+        (if new-elev
+          (progn
+            (setq new-txt (niv:format-level new-elev old-txt))
+            (setq ed (entget attrib-ent))
+            (setq ed (subst (cons 1 new-txt) (assoc 1 ed) ed))
+            (entmod ed)
+            (entupd attrib-ent)
+            (setq count (1+ count))
+          )
+        )
+      )
+    )
+    (setq i (1+ i))
+  )
+
+  (command "_.UNDO" "_End")
+  (princ (strcat "\n" (itoa count) " marcadores actualizados."))
+  (princ)
+)
+
 ;;=================== RESET ===================;;
 
 (defun c:NIVRESET ()
@@ -330,5 +390,5 @@
 
 ;;=================== CARGA ===================;;
 
-(princ "\nNivelar v1.0 cargado. Comandos: NIVELAR, NIVRESET")
+(princ "\nNivelar v1.1 cargado. Comandos: NIVELAR, NIVTODOS, NIVRESET")
 (princ)
