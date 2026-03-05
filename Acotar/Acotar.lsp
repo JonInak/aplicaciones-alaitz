@@ -1,5 +1,5 @@
 ;|
-  ACOTAR PILARES v2 para LusoCad
+  ACOPIL - Acotar Pilares v2 para LusoCad
   ================================
   Acota automaticamente pilares (PHC/PHR) en cuadros de pilotes.
   Usa DIMENSION ALIGNED con estilo "cota100" y dibuja rombo interior.
@@ -10,7 +10,7 @@
 
   Modo de uso:
     1. Cargar con APPLOAD
-    2. Ejecutar comando ACOTAR
+    2. Ejecutar comando ACOPIL
     3. Seleccionar los elementos del cuadro (textos PHC/PHR + lineas del rombo)
 
   Revision: 04/03/2026
@@ -36,7 +36,7 @@
 (defun acot:log-open ()
   (setq acot:*logfp* (open acot:*logfile* "w"))
   (if acot:*logfp*
-    (princ "=== ACOTAR LOG ===\n" acot:*logfp*)
+    (princ "=== ACOPIL LOG ===\n" acot:*logfp*)
   )
 )
 
@@ -509,11 +509,11 @@
 
 ;;=================== COMANDO PRINCIPAL ===================;;
 
-(defun c:ACOTAR (/ ss i n ent ed tp tx vals
+(defun c:ACOPIL (/ ss i n ent ed tp tx vals
                    tlst dlst tpt dlines result
                    old-dimstyle old-clayer old-osm old-cmdecho cnt)
 
-  (princ "\nACOTAR PILARES - Seleccione textos PHC/PHR y lineas del rombo: ")
+  (princ "\nACOPIL - Seleccione textos PHC/PHR y lineas del rombo: ")
   (setq ss (ssget))
 
   (if (null ss)
@@ -661,5 +661,5 @@
   (princ)
 )
 
-(princ "\nACOTAR PILARES v2 cargado. Escriba ACOTAR para ejecutar.")
+(princ "\nACOPIL v2 cargado. Escriba ACOPIL para ejecutar.")
 (princ)
