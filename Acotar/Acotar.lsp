@@ -34,9 +34,13 @@
 ;;=================== LOG ===================;;
 
 (defun acot:log-open ()
-  (setq acot:*logfp* (open acot:*logfile* "w"))
-  (if acot:*logfp*
-    (princ "=== ACOPIL LOG ===\n" acot:*logfp*)
+  (if acot:*logfile*
+    (progn
+      (setq acot:*logfp* (open acot:*logfile* "w"))
+      (if acot:*logfp*
+        (princ "=== ACOPIL LOG ===\n" acot:*logfp*)
+      )
+    )
   )
 )
 
