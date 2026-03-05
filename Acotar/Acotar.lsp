@@ -367,7 +367,8 @@
   mid-ne-out mid-ne-in
   dim-off mid-sw mid-se
   lv-txt rv-txt tv-txt
-  dir-sw dir-es side-sw side-es txt-off-sw txt-off-es)
+  dir-sw dir-es side-sw side-es txt-off-sw txt-off-es
+  dir-ne side-ne txt-off-ne)
 
   (setq verts (acot:extract-vertices diamond-lines))
   (acot:log (strcat "  Vertices: " (itoa (length verts))))
@@ -486,13 +487,20 @@
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
       (setq mid-ne-in  (acot:midpt n-in e-in))
+      ;; Offset texto: dirección paralela al lado SW (hacia arriba-izquierda)
+      (setq dir-ne dir-sw)  ;; misma dirección que cota izquierda
+      (setq side-ne (acot:dist2d n e))
+      (setq txt-off-ne (* side-ne 0.55))
+      (acot:log (strcat "  side-ne: " (rtos side-ne 2 1) " txt-off-ne: " (rtos txt-off-ne 2 1)))
+      (acot:log (strcat "  dir-ne: (" (rtos (car dir-ne) 2 4) "," (rtos (cadr dir-ne) 2 4) ")"))
       (acot:make-dim mid-ne-out mid-ne-in
         (acot:pt-offset (acot:midpt mid-ne-out mid-ne-in)
           (acot:normalize (list (- (car center) (car mid-ne-out))
                                 (- (cadr center) (cadr mid-ne-out))))
           (- dim-off))
         tv-txt
-        nil)
+        (list (* (car dir-ne) txt-off-ne)
+              (* (cadr dir-ne) txt-off-ne)))
 
       T
       )) ;; cierra if interseccion + progn
