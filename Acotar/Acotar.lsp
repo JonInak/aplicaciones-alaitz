@@ -487,20 +487,19 @@
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
       (setq mid-ne-in  (acot:midpt n-in e-in))
-      ;; Offset texto: dirección paralela al lado SW (hacia arriba-izquierda)
-      (setq dir-ne dir-sw)  ;; misma dirección que cota izquierda
+      ;; Offset texto cota superior: proporcional al lado NE
+      ;; Basado en medidas reales: dX=+29.6, dY=+53.0 para side=40
       (setq side-ne (acot:dist2d n e))
-      (setq txt-off-ne (* side-ne 0.55))
-      (acot:log (strcat "  side-ne: " (rtos side-ne 2 1) " txt-off-ne: " (rtos txt-off-ne 2 1)))
-      (acot:log (strcat "  dir-ne: (" (rtos (car dir-ne) 2 4) "," (rtos (cadr dir-ne) 2 4) ")"))
+      (setq txt-off-ne (list (* side-ne 0.74) (* side-ne 1.33)))
+      (acot:log (strcat "  side-ne: " (rtos side-ne 2 1)
+                        " txt-off-ne: (" (rtos (car txt-off-ne) 2 1) "," (rtos (cadr txt-off-ne) 2 1) ")"))
       (acot:make-dim mid-ne-out mid-ne-in
         (acot:pt-offset (acot:midpt mid-ne-out mid-ne-in)
           (acot:normalize (list (- (car center) (car mid-ne-out))
                                 (- (cadr center) (cadr mid-ne-out))))
           (- dim-off))
         tv-txt
-        (list (* (car dir-ne) txt-off-ne)
-              (* (cadr dir-ne) txt-off-ne)))
+        txt-off-ne)
 
       T
       )) ;; cierra if interseccion + progn
