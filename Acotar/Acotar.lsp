@@ -28,6 +28,7 @@
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
 (setq acot:*color* 1)             ;; Color rojo
 (setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
+(setq acot:*txt-off-ratio* 0.5) ;; Offset texto = ratio * lado_rombo (proporcional)
 (setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")
 
 ;;=================== LOG ===================;;
@@ -307,8 +308,8 @@
 
 ;;; Crea cota DIMALIGNED con texto override y estilo forzado
 ;;; Si txt-override es nil, usa la medida real
-;;; txt-offset: vector 2D (dx dy) para desplazar el texto, o nil
-(defun acot:make-dim (pt1 pt2 dim-pt txt-override txt-offset / ent ed tp70 old-tp new-tp)
+;;; txt-offset: vector 2D (dx dy) para mover el texto con DIMTEDIT, o nil
+(defun acot:make-dim (pt1 pt2 dim-pt txt-override txt-offset / ent ed old-tp new-tp)
   (command "_.DIMALIGNED"
     (list (car pt1) (cadr pt1) 0.0)
     (list (car pt2) (cadr pt2) 0.0)
@@ -331,23 +332,23 @@
           (setq ed (append ed (list (cons 1 txt-override))))
         )
       )
-      ;; Desplazar texto si se pide offset
+      (entmod ed)
+      (entupd ent)
+      ;; Mover texto con DIMTEDIT si hay offset
       (if txt-offset
         (progn
+          ;; Leer posicion actual del texto (group 11)
+          (setq ed (entget ent))
           (setq old-tp (cdr (assoc 11 ed)))
           (setq new-tp (list (+ (car old-tp) (car txt-offset))
                              (+ (cadr old-tp) (cadr txt-offset))
-                             (if (caddr old-tp) (caddr old-tp) 0.0)))
-          (setq ed (subst (cons 11 new-tp) (assoc 11 ed) ed))
-          ;; Activar flag "texto posicionado por usuario" (bit 128 del group 70)
-          (setq tp70 (cdr (assoc 70 ed)))
-          (if (and tp70 (= (logand tp70 128) 0))
-            (setq ed (subst (cons 70 (+ tp70 128)) (assoc 70 ed) ed))
-          )
+                             0.0))
+          (acot:log (strcat "    DIMTEDIT: old=(" (rtos (car old-tp) 2 1) "," (rtos (cadr old-tp) 2 1) ")"
+                          " offset=(" (rtos (car txt-offset) 2 1) "," (rtos (cadr txt-offset) 2 1) ")"
+                          " new=(" (rtos (car new-tp) 2 1) "," (rtos (cadr new-tp) 2 1) ")"))
+          (command "_.DIMTEDIT" ent new-tp)
         )
       )
-      (entmod ed)
-      (entupd ent)
     )
   )
 )
@@ -359,12 +360,14 @@
   n e s w
   perp-offset
   n-ne n-es n-sw n-wn
+  n-sw-out n-es-out
   ne-off es-off sw-off wn-off
   d-ne d-es d-sw d-wn
   n-in e-in s-in w-in
   mid-ne-out mid-ne-in
   dim-off mid-sw mid-se
-  lv-txt rv-txt tv-txt)
+  lv-txt rv-txt tv-txt
+  dir-sw dir-es side-sw side-es txt-off-sw txt-off-es)
 
   (setq verts (acot:extract-vertices diamond-lines))
   (acot:log (strcat "  Vertices: " (itoa (length verts))))
@@ -441,7 +444,24 @@
       (setq rv-txt (if (= rv (fix rv)) (itoa (fix rv)) (rtos rv 2 1)))
       (setq tv-txt (if (= tv (fix tv)) (itoa (fix tv)) (rtos tv 2 1)))
 
-      ;; Cota izquierda: S -> W (muestra left_value, ej: "120")
+      ;; Dirección paralela de cada lado (para offset de texto via DIMTEDIT)
+      ;; Basado en medidas manuales: dX=-40.1, dY=+49.9 para lado 60
+      ;; Eso es exactamente la dirección del vector del lado (S->W)
+      ;; Ratio: magnitud_offset / lado = 64 / 60 = 1.067
+      (setq dir-sw (acot:normalize (list (- (car w) (car s)) (- (cadr w) (cadr s)))))
+      (setq dir-es (acot:normalize (list (- (car e) (car s)) (- (cadr e) (cadr s)))))
+
+      ;; Calcular offset proporcional al lado real de cada cota
+      (setq side-sw (acot:dist2d s w))
+      (setq side-es (acot:dist2d e s))
+      (setq txt-off-sw (* side-sw acot:*txt-off-ratio*))
+      (setq txt-off-es (* side-es acot:*txt-off-ratio*))
+      (acot:log (strcat "  side-sw: " (rtos side-sw 2 1) " side-es: " (rtos side-es 2 1)))
+      (acot:log (strcat "  txt-off-sw: " (rtos txt-off-sw 2 1) " txt-off-es: " (rtos txt-off-es 2 1)))
+      (acot:log (strcat "  dir-sw: (" (rtos (car dir-sw) 2 4) "," (rtos (cadr dir-sw) 2 4) ")"))
+      (acot:log (strcat "  dir-es: (" (rtos (car dir-es) 2 4) "," (rtos (cadr dir-es) 2 4) ")"))
+
+      ;; Cota izquierda: S -> W (muestra left_value, ej: "300")
       (setq mid-sw (acot:midpt s w))
       (acot:make-dim s w
         (acot:pt-offset mid-sw
@@ -449,9 +469,10 @@
                                 (- (cadr center) (cadr mid-sw))))
           (- dim-off))
         lv-txt
-        nil)
+        (list (* (car dir-sw) txt-off-sw)
+              (* (cadr dir-sw) txt-off-sw)))
 
-      ;; Cota derecha: S -> E (muestra right_value, ej: "120")
+      ;; Cota derecha: S -> E (muestra right_value, ej: "150")
       (setq mid-se (acot:midpt s e))
       (acot:make-dim s e
         (acot:pt-offset mid-se
@@ -459,7 +480,8 @@
                                 (- (cadr center) (cadr mid-se))))
           (- dim-off))
         rv-txt
-        nil)
+        (list (* (car dir-es) txt-off-es)
+              (* (cadr dir-es) txt-off-es)))
 
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
