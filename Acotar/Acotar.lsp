@@ -27,6 +27,7 @@
 (setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
 (setq acot:*color* 1)             ;; Color rojo
+(setq acot:*txt-offset* 50.0)    ;; Offset texto cotas laterales (perpendicular, hacia fuera)
 (setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")
 
 ;;=================== LOG ===================;;
@@ -304,27 +305,49 @@
       (cons 11 (list (car b) (cadr b) 0.0))))
 )
 
-;;; Crea cota DIMALIGNED con texto override
+;;; Crea cota DIMALIGNED con texto override y estilo forzado
 ;;; Si txt-override es nil, usa la medida real
-(defun acot:make-dim (pt1 pt2 dim-pt txt-override / ent)
+;;; txt-offset: vector 2D (dx dy) para desplazar el texto, o nil
+(defun acot:make-dim (pt1 pt2 dim-pt txt-override txt-offset / ent ed tp70 old-tp new-tp)
   (command "_.DIMALIGNED"
     (list (car pt1) (cadr pt1) 0.0)
     (list (car pt2) (cadr pt2) 0.0)
     (list (car dim-pt) (cadr dim-pt) 0.0))
-  ;; Si hay texto override, modificar la ultima entidad creada
-  (if txt-override
+  ;; Modificar la cota recien creada
+  (setq ent (entlast))
+  (if ent
     (progn
-      (setq ent (entlast))
-      (if ent
-        (progn
-          (setq ent (entget ent))
-          (if (assoc 1 ent)
-            (setq ent (subst (cons 1 txt-override) (assoc 1 ent) ent))
-            (setq ent (append ent (list (cons 1 txt-override))))
-          )
-          (entmod ent)
+      (setq ed (entget ent))
+      ;; Forzar estilo de cota (DXF group 3) + texto override (group 1)
+      (if (tblsearch "DIMSTYLE" acot:*dimstyle*)
+        (if (assoc 3 ed)
+          (setq ed (subst (cons 3 acot:*dimstyle*) (assoc 3 ed) ed))
+          (setq ed (append ed (list (cons 3 acot:*dimstyle*))))
         )
       )
+      (if txt-override
+        (if (assoc 1 ed)
+          (setq ed (subst (cons 1 txt-override) (assoc 1 ed) ed))
+          (setq ed (append ed (list (cons 1 txt-override))))
+        )
+      )
+      ;; Desplazar texto si se pide offset
+      (if txt-offset
+        (progn
+          (setq old-tp (cdr (assoc 11 ed)))
+          (setq new-tp (list (+ (car old-tp) (car txt-offset))
+                             (+ (cadr old-tp) (cadr txt-offset))
+                             (if (caddr old-tp) (caddr old-tp) 0.0)))
+          (setq ed (subst (cons 11 new-tp) (assoc 11 ed) ed))
+          ;; Activar flag "texto posicionado por usuario" (bit 128 del group 70)
+          (setq tp70 (cdr (assoc 70 ed)))
+          (if (and tp70 (= (logand tp70 128) 0))
+            (setq ed (subst (cons 70 (+ tp70 128)) (assoc 70 ed) ed))
+          )
+        )
+      )
+      (entmod ed)
+      (entupd ent)
     )
   )
 )
@@ -336,6 +359,7 @@
   n e s w
   perp-offset
   n-ne n-es n-sw n-wn
+  n-sw-out n-es-out
   ne-off es-off sw-off wn-off
   d-ne d-es d-sw d-wn
   n-in e-in s-in w-in
@@ -418,6 +442,11 @@
       (setq rv-txt (if (= rv (fix rv)) (itoa (fix rv)) (rtos rv 2 1)))
       (setq tv-txt (if (= tv (fix tv)) (itoa (fix tv)) (rtos tv 2 1)))
 
+      ;; Vector perpendicular hacia fuera para offset de texto
+      ;; Lado SW: normal hacia fuera = invertir la normal interior
+      (setq n-sw-out (list (- (car n-sw)) (- (cadr n-sw))))
+      (setq n-es-out (list (- (car n-es)) (- (cadr n-es))))
+
       ;; Cota izquierda: S -> W (muestra left_value, ej: "120")
       (setq mid-sw (acot:midpt s w))
       (acot:make-dim s w
@@ -425,7 +454,9 @@
           (acot:normalize (list (- (car center) (car mid-sw))
                                 (- (cadr center) (cadr mid-sw))))
           (- dim-off))
-        lv-txt)
+        lv-txt
+        (list (* (car n-sw-out) acot:*txt-offset*)
+              (* (cadr n-sw-out) acot:*txt-offset*)))
 
       ;; Cota derecha: S -> E (muestra right_value, ej: "120")
       (setq mid-se (acot:midpt s e))
@@ -434,7 +465,9 @@
           (acot:normalize (list (- (car center) (car mid-se))
                                 (- (cadr center) (cadr mid-se))))
           (- dim-off))
-        rv-txt)
+        rv-txt
+        (list (* (car n-es-out) acot:*txt-offset*)
+              (* (cadr n-es-out) acot:*txt-offset*)))
 
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
@@ -444,7 +477,8 @@
           (acot:normalize (list (- (car center) (car mid-ne-out))
                                 (- (cadr center) (cadr mid-ne-out))))
           (- dim-off))
-        tv-txt)
+        tv-txt
+        nil)
 
       T
       )) ;; cierra if interseccion + progn
@@ -479,10 +513,10 @@
         (entmake (list '(0 . "LAYER") (cons 2 acot:*layer*) '(70 . 0) '(62 . 1)))
       )
 
-      ;; Establecer estilo de cota
+      ;; Restaurar estilo de cota si existe
       (if (tblsearch "DIMSTYLE" acot:*dimstyle*)
         (command "_.DIMSTYLE" "_Restore" acot:*dimstyle*)
-        (princ (strcat "\nAVISO: Estilo '" acot:*dimstyle* "' no encontrado."))
+        (princ (strcat "\nAVISO: Estilo '" acot:*dimstyle* "' no encontrado. Copie una cota con ese estilo desde el plano de referencia."))
       )
       (setvar "CLAYER" acot:*layer*)
 
