@@ -27,7 +27,7 @@
 (setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
 (setq acot:*color* 1)             ;; Color rojo
-(setq acot:*txt-offset* 50.0)    ;; Offset texto cotas laterales (perpendicular, hacia fuera)
+(setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
 (setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")
 
 ;;=================== LOG ===================;;
@@ -359,7 +359,6 @@
   n e s w
   perp-offset
   n-ne n-es n-sw n-wn
-  n-sw-out n-es-out
   ne-off es-off sw-off wn-off
   d-ne d-es d-sw d-wn
   n-in e-in s-in w-in
@@ -435,17 +434,12 @@
       (acot:mk-line w-in n-in acot:*layer* acot:*color*)
 
       ;; --- COTAS ALINEADAS (con texto override) ---
-      (setq dim-off (* side-len 0.15))
+      (setq dim-off (* side-len acot:*dim-off-ratio*))
 
       ;; Formatear valores para texto: entero si no tiene decimales
       (setq lv-txt (if (= lv (fix lv)) (itoa (fix lv)) (rtos lv 2 1)))
       (setq rv-txt (if (= rv (fix rv)) (itoa (fix rv)) (rtos rv 2 1)))
       (setq tv-txt (if (= tv (fix tv)) (itoa (fix tv)) (rtos tv 2 1)))
-
-      ;; Vector perpendicular hacia fuera para offset de texto
-      ;; Lado SW: normal hacia fuera = invertir la normal interior
-      (setq n-sw-out (list (- (car n-sw)) (- (cadr n-sw))))
-      (setq n-es-out (list (- (car n-es)) (- (cadr n-es))))
 
       ;; Cota izquierda: S -> W (muestra left_value, ej: "120")
       (setq mid-sw (acot:midpt s w))
@@ -455,8 +449,7 @@
                                 (- (cadr center) (cadr mid-sw))))
           (- dim-off))
         lv-txt
-        (list (* (car n-sw-out) acot:*txt-offset*)
-              (* (cadr n-sw-out) acot:*txt-offset*)))
+        nil)
 
       ;; Cota derecha: S -> E (muestra right_value, ej: "120")
       (setq mid-se (acot:midpt s e))
@@ -466,8 +459,7 @@
                                 (- (cadr center) (cadr mid-se))))
           (- dim-off))
         rv-txt
-        (list (* (car n-es-out) acot:*txt-offset*)
-              (* (cadr n-es-out) acot:*txt-offset*)))
+        nil)
 
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
