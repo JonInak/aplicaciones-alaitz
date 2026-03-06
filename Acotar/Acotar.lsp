@@ -29,7 +29,7 @@
 (setq acot:*color* 1)             ;; Color rojo
 (setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
 (setq acot:*txt-off-ratio* 0.5) ;; Offset texto = ratio * lado_rombo (proporcional)
-(setq acot:*logfile* nil)  ;; Poner ruta para activar log
+(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")  ;; Poner ruta para activar log
 
 ;;=================== LOG ===================;;
 
@@ -212,17 +212,12 @@
 
 ;;; Comprueba si una LINE es arista del rombo (longitud + angulo diagonal)
 ;;; Rechaza horizontales (~0/180) y verticales (~90) que son separadores de celdas
-(defun acot:is-diamond-edge (ent / ed p1 p2 len ang)
+(defun acot:is-diamond-edge (ent / ed p1 p2 len)
   (setq ed  (entget ent)
         p1  (cdr (assoc 10 ed))
         p2  (cdr (assoc 11 ed))
-        len (acot:dist2d p1 p2)
-        ang (rem (* (/ (angle (list (car p1) (cadr p1))
-                               (list (car p2) (cadr p2)))
-                      pi) 180.0) 180.0))
-  (and (> len acot:*side-min*) (< len acot:*side-max*)
-       (or (and (> ang 10.0) (< ang 80.0))
-           (and (> ang 100.0) (< ang 170.0))))
+        len (acot:dist2d p1 p2))
+  (and (> len acot:*side-min*) (< len acot:*side-max*))
 )
 
 ;;; Obtiene los 2 endpoints 2D de una LINE
@@ -640,7 +635,11 @@
                (list (car (cdr (assoc 10 ed))) (cadr (cdr (assoc 10 ed))))
                (list (car (cdr (assoc 11 ed))) (cadr (cdr (assoc 11 ed)))))
                pi) 180.0) 180.0) 2 1)
-             " capa=" (cdr (assoc 8 ed)))))
+             " capa=" (cdr (assoc 8 ed))
+             " mid=("
+             (rtos (/ (+ (car (cdr (assoc 10 ed))) (car (cdr (assoc 11 ed)))) 2.0) 2 1) ","
+             (rtos (/ (+ (cadr (cdr (assoc 10 ed))) (cadr (cdr (assoc 11 ed)))) 2.0) 2 1) ")"
+             )))
           ((and (= tp "LWPOLYLINE")
                 (= (strcase (cdr (assoc 8 ed))) (strcase acot:*src-layer*)))
            (setq poly-lines (acot:lwpoly-to-lines ent))
