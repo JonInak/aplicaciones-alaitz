@@ -576,8 +576,7 @@
             old-dimstyle (getvar "DIMSTYLE"))
       (setvar "OSMODE" 0)
       (setvar "CMDECHO" 0)
-      (vla-StartUndoMark
-        (vla-get-ActiveDocument (vlax-get-acad-object)))
+      (command "_.UNDO" "_Begin")
 
       ;; Crear capa si no existe
       (if (not (tblsearch "LAYER" acot:*layer*))
@@ -774,8 +773,7 @@
       (if (tblsearch "DIMSTYLE" old-dimstyle)
         (command "_.DIMSTYLE" "_Restore" old-dimstyle)
       )
-      (vla-EndUndoMark
-        (vla-get-ActiveDocument (vlax-get-acad-object)))
+      (command "_.UNDO" "_End")
       (setvar "CMDECHO" old-cmdecho)
       (setvar "OSMODE" old-osm)
     )
