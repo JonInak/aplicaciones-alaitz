@@ -29,7 +29,7 @@
 (setq acot:*color* 1)             ;; Color rojo
 (setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
 (setq acot:*txt-off-ratio* 0.5) ;; Offset texto = ratio * lado_rombo (proporcional)
-(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")  ;; nil para desactivar
+(setq acot:*logfile* nil)  ;; Poner ruta para activar log
 
 ;;=================== LOG ===================;;
 
