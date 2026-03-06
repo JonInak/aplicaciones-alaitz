@@ -532,23 +532,26 @@
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
       (setq mid-ne-in  (acot:midpt n-in e-in))
-      ;; Offset texto cota superior: direccion centro -> midpoint NE exterior
-      ;; Siempre apunta hacia fuera del rombo independientemente de la orientacion
       (setq side-ne (acot:dist2d n e))
+      ;; Posicion absoluta del texto: vertice N + pequeño offset hacia fuera
       (setq dir-ne-out (acot:normalize
-        (list (- (car mid-ne-out) (car center))
-              (- (cadr mid-ne-out) (cadr center)))))
-      (setq txt-off-ne (list (* 1.5 side-ne (car dir-ne-out))
-                             (* 1.5 side-ne (cadr dir-ne-out))))
+        (list (- (car n) (car center))
+              (- (cadr n) (cadr center)))))
+      (setq txt-off-ne (list (+ (car n) (* 0.5 side-ne (car dir-ne-out)))
+                             (+ (cadr n) (* 0.5 side-ne (cadr dir-ne-out)))))
       (acot:log (strcat "  side-ne: " (rtos side-ne 2 1)
-                        " txt-off-ne: (" (rtos (car txt-off-ne) 2 1) "," (rtos (cadr txt-off-ne) 2 1) ")"))
+                        " txt-target: (" (rtos (car txt-off-ne) 2 1) "," (rtos (cadr txt-off-ne) 2 1) ")"))
+      ;; Crear cota sin offset de texto
       (acot:make-dim mid-ne-out mid-ne-in
         (acot:pt-offset (acot:midpt mid-ne-out mid-ne-in)
           (acot:normalize (list (- (car center) (car mid-ne-out))
                                 (- (cadr center) (cadr mid-ne-out))))
           (- dim-off))
         tv-txt
-        txt-off-ne)
+        nil)
+      ;; Mover texto a posicion absoluta con DIMTEDIT
+      (command "_.DIMTEDIT" (entlast)
+        (list (car txt-off-ne) (cadr txt-off-ne) 0.0))
 
       T
       )) ;; cierra if interseccion + progn
@@ -662,38 +665,15 @@
       (acot:log (strcat "Resumen: " (itoa (length tlst)) " textos, "
                         (itoa (length dlst)) " lineas rombo"))
 
-      ;; Auto-detectar escala desde el tamano medio de las aristas
-      (setq dim-scale 1.0)
-      (if dlst
-        (progn
-          (setq avg-side 0.0  side-cnt 0)
-          (foreach ent dlst
-            (setq avg-side (+ avg-side (apply 'acot:dist2d (acot:line-pts ent))))
-            (setq side-cnt (1+ side-cnt))
-          )
-          (setq avg-side (/ avg-side (float side-cnt)))
-          (setq dim-scale (/ avg-side acot:*ref-side*))
-          (acot:log (strcat "Escala: avg-side=" (rtos avg-side 2 3)
-                            " dim-scale=" (rtos dim-scale 2 4)))
-          ;; Si escala es significativamente distinta de 1:1, ajustar DIMVARs
-          (if (< dim-scale 0.5)
-            (progn
-              (setq old-dimtxt (getvar "DIMTXT")
-                    old-dimasz (getvar "DIMASZ")
-                    old-dimexe (getvar "DIMEXE")
-                    old-dimexo (getvar "DIMEXO")
-                    old-dimgap (getvar "DIMGAP"))
-              (setvar "DIMTXT" (* old-dimtxt dim-scale))
-              (setvar "DIMASZ" (* old-dimasz dim-scale))
-              (setvar "DIMEXE" (* old-dimexe dim-scale))
-              (setvar "DIMEXO" (* old-dimexo dim-scale))
-              (setvar "DIMGAP" (* old-dimgap dim-scale))
-              (acot:log (strcat "  DIMVARs escalados: DIMTXT=" (rtos (* old-dimtxt dim-scale) 2 3)
-                                " DIMASZ=" (rtos (* old-dimasz dim-scale) 2 3)))
-            )
-          )
-        )
-      )
+      ;; Guardar DIMVARs originales para escalar por rombo
+      (setq old-dimtxt (getvar "DIMTXT")
+            old-dimasz (getvar "DIMASZ")
+            old-dimexe (getvar "DIMEXE")
+            old-dimexo (getvar "DIMEXO")
+            old-dimgap (getvar "DIMGAP"))
+      (acot:log (strcat "DIMVARs base: DIMTXT=" (rtos old-dimtxt 2 3)
+                        " DIMASZ=" (rtos old-dimasz 2 3)
+                        " DIMEXO=" (rtos old-dimexo 2 3)))
 
       (cond
         ((null tlst)
@@ -730,6 +710,20 @@
                      )
                      (entmod ed)
                    )
+                   ;; Escalar DIMVARs proporcional al lado de ESTE rombo
+                   (setq avg-side 0.0  side-cnt 0)
+                   (foreach ent dlines
+                     (setq avg-side (+ avg-side (apply 'acot:dist2d (acot:line-pts ent))))
+                     (setq side-cnt (1+ side-cnt)))
+                   (setq avg-side (/ avg-side (float side-cnt)))
+                   (setq dim-scale (/ avg-side acot:*ref-side*))
+                   (acot:log (strcat "  Escala rombo: side=" (rtos avg-side 2 1)
+                                     " dim-scale=" (rtos dim-scale 2 3)))
+                   (setvar "DIMTXT" (* old-dimtxt dim-scale))
+                   (setvar "DIMASZ" (* old-dimasz dim-scale))
+                   (setvar "DIMEXE" (* old-dimexe dim-scale))
+                   (setvar "DIMEXO" (* old-dimexo dim-scale))
+                   (setvar "DIMGAP" (* old-dimgap dim-scale))
                    (if (acot:annotate-pile dlines
                          (car vals) (cadr vals) (caddr vals))
                      (progn
@@ -769,16 +763,12 @@
         (princ (strcat "\nLog guardado en: " acot:*logfile*))
       )
 
-      ;; Restaurar DIMVARs si fueron escalados
-      (if old-dimtxt
-        (progn
-          (setvar "DIMTXT" old-dimtxt)
-          (setvar "DIMASZ" old-dimasz)
-          (setvar "DIMEXE" old-dimexe)
-          (setvar "DIMEXO" old-dimexo)
-          (setvar "DIMGAP" old-dimgap)
-        )
-      )
+      ;; Restaurar DIMVARs originales
+      (setvar "DIMTXT" old-dimtxt)
+      (setvar "DIMASZ" old-dimasz)
+      (setvar "DIMEXE" old-dimexe)
+      (setvar "DIMEXO" old-dimexo)
+      (setvar "DIMGAP" old-dimgap)
 
       ;; Restaurar estado
       (setvar "CLAYER" old-clayer)
