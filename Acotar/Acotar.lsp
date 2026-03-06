@@ -29,7 +29,7 @@
 (setq acot:*color* 1)             ;; Color rojo
 (setq acot:*dim-off-ratio* 1.2)   ;; Distancia linea de cota al rombo = ratio * lado_rombo
 (setq acot:*txt-off-ratio* 0.5) ;; Offset texto = ratio * lado_rombo (proporcional)
-(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")  ;; Poner nil para desactivar log
+(setq acot:*logfile* "C:/Users/Jon/Desktop/Jon/PRUEBA/AplicacionesAlaitz/Acotar/acotar_log.txt")  ;; nil para desactivar
 
 ;;=================== LOG ===================;;
 
@@ -183,14 +183,19 @@
 
 ;;=================== DETECCION DEL ROMBO ===================;;
 
-;;; Comprueba si una LINE es arista del rombo (solo por longitud)
-;;; El filtro de capa se aplica en el bucle principal
-(defun acot:is-diamond-edge (ent / ed p1 p2 len)
+;;; Comprueba si una LINE es arista del rombo (longitud + angulo diagonal)
+;;; Rechaza horizontales (~0/180) y verticales (~90) que son separadores de celdas
+(defun acot:is-diamond-edge (ent / ed p1 p2 len ang)
   (setq ed  (entget ent)
         p1  (cdr (assoc 10 ed))
         p2  (cdr (assoc 11 ed))
-        len (acot:dist2d p1 p2))
-  (and (> len acot:*side-min*) (< len acot:*side-max*))
+        len (acot:dist2d p1 p2)
+        ang (rem (* (/ (angle (list (car p1) (cadr p1))
+                               (list (car p2) (cadr p2)))
+                      pi) 180.0) 180.0))
+  (and (> len acot:*side-min*) (< len acot:*side-max*)
+       (or (and (> ang 10.0) (< ang 80.0))
+           (and (> ang 100.0) (< ang 170.0))))
 )
 
 ;;; Obtiene los 2 endpoints 2D de una LINE
@@ -375,7 +380,7 @@
   dim-off mid-sw mid-se
   lv-txt rv-txt tv-txt
   dir-sw dir-es side-sw side-es txt-off-sw txt-off-es
-  dir-ne side-ne txt-off-ne dir-ne-par dir-ne-perp)
+  dir-ne side-ne txt-off-ne dir-ne-par dir-ne-perp tmp)
 
   (setq verts (acot:extract-vertices diamond-lines))
   (acot:log (strcat "  Vertices: " (itoa (length verts))))
@@ -446,6 +451,12 @@
 
       ;; --- COTAS ALINEADAS (con texto override) ---
       (setq dim-off (* side-len acot:*dim-off-ratio*))
+
+      ;; Para PHR: asignar valor mayor al lado mas largo del rombo
+      (if (and (/= lv rv)
+               (< (* (- lv rv) (- (acot:dist2d s w) (acot:dist2d e s))) 0))
+        (setq tmp lv  lv rv  rv tmp)
+      )
 
       ;; Formatear valores para texto: entero si no tiene decimales
       (setq lv-txt (if (= lv (fix lv)) (itoa (fix lv)) (rtos lv 2 1)))
@@ -650,6 +661,8 @@
         ((null dlst)
          (princ "\nNo se encontraron lineas diagonales del rombo."))
         (T
+         ;; Estrategia: para cada rombo, acotar solo con el texto más cercano
+         ;; Agrupar textos por rombo (conjunto de 4 lineas) para evitar duplicados
          (setq cnt 0)
          (foreach tent tlst
            (setq ed   (entget tent)
@@ -668,11 +681,23 @@
                (if dlines
                  (progn
                    (acot:log "  Rombo encontrado -> acotando")
+                   ;; Marcar estas 4 lineas como usadas (setq con capa temp)
+                   (foreach ent dlines
+                     (setq ed (entget ent))
+                     (if (assoc 8 ed)
+                       (setq ed (subst (cons 8 "~ACOTADO~") (assoc 8 ed) ed))
+                       (setq ed (append ed (list (cons 8 "~ACOTADO~"))))
+                     )
+                     (entmod ed)
+                   )
                    (if (acot:annotate-pile dlines
                          (car vals) (cadr vals) (caddr vals))
                      (progn
                        (setq cnt (1+ cnt))
-                       (acot:log "  OK acotado"))
+                       (acot:log "  OK acotado")
+                       ;; Remover estas lineas de dlst para no procesarlas de nuevo
+                       (setq dlst (vl-remove-if '(lambda (x) (member x dlines)) dlst))
+                     )
                      (acot:log "  ERROR al acotar")
                    )
                  )
