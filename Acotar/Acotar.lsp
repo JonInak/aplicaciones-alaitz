@@ -407,7 +407,7 @@
   dim-off mid-sw mid-se
   lv-txt rv-txt tv-txt
   dir-sw dir-es side-sw side-es txt-off-sw txt-off-es
-  dir-ne side-ne txt-off-ne dir-ne-par dir-ne-perp tmp)
+  dir-ne side-ne txt-off-ne dir-ne-out tmp)
 
   (setq verts (acot:extract-vertices diamond-lines))
   (acot:log (strcat "  Vertices: " (itoa (length verts))))
@@ -532,18 +532,14 @@
       ;; Cota superior: entre midpoints de lado NE exterior e interior
       (setq mid-ne-out (acot:midpt n e))
       (setq mid-ne-in  (acot:midpt n-in e-in))
-      ;; Offset texto cota superior: componentes paralela + perpendicular al lado NE
-      ;; Se adapta automaticamente a cualquier angulo de rotacion del rombo
+      ;; Offset texto cota superior: direccion centro -> midpoint NE exterior
+      ;; Siempre apunta hacia fuera del rombo independientemente de la orientacion
       (setq side-ne (acot:dist2d n e))
-      ;; Direccion paralela al lado NE (de E hacia N)
-      (setq dir-ne-par (acot:normalize (list (- (car n) (car e)) (- (cadr n) (cadr e)))))
-      ;; Normal exterior del lado NE (perpendicular, alejandose del centro)
-      (setq dir-ne-perp (list (- (car n-ne)) (- (cadr n-ne))))
-      ;; Combinar: 0.54*side paralelo + 1.42*side perpendicular
-      (setq txt-off-ne (list (+ (* 0.54 side-ne (car dir-ne-par))
-                                (* 1.42 side-ne (car dir-ne-perp)))
-                             (+ (* 0.54 side-ne (cadr dir-ne-par))
-                                (* 1.42 side-ne (cadr dir-ne-perp)))))
+      (setq dir-ne-out (acot:normalize
+        (list (- (car mid-ne-out) (car center))
+              (- (cadr mid-ne-out) (cadr center)))))
+      (setq txt-off-ne (list (* 1.5 side-ne (car dir-ne-out))
+                             (* 1.5 side-ne (cadr dir-ne-out))))
       (acot:log (strcat "  side-ne: " (rtos side-ne 2 1)
                         " txt-off-ne: (" (rtos (car txt-off-ne) 2 1) "," (rtos (cadr txt-off-ne) 2 1) ")"))
       (acot:make-dim mid-ne-out mid-ne-in
