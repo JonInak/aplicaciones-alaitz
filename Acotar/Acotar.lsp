@@ -22,6 +22,7 @@
 
 (setq acot:*side-min* 0.1)        ;; Long. minima arista rombo
 (setq acot:*side-max* 65.0)       ;; Long. maxima arista rombo
+(setq acot:*ref-side* 40.0)       ;; Lado de referencia a escala 1:1 (para auto-escala)
 (setq acot:*layer* "z_ACOTADO")    ;; Capa para anotaciones
 (setq acot:*src-layer* "DIBUJO_DE_ELEMENTOS") ;; Capa de los rombos originales
 (setq acot:*dimstyle* "cota100")  ;; Estilo de cota
@@ -258,8 +259,10 @@
 )
 
 ;;; Extrae 4 vertices unicos de las 4 lineas
-(defun acot:extract-vertices (lines / all-pts unique tol pt found)
-  (setq tol 0.5  all-pts nil)
+(defun acot:extract-vertices (lines / all-pts unique tol pt found side-len)
+  ;; Tolerancia proporcional al lado: 10% de la longitud de la primera linea
+  (setq side-len (apply 'acot:dist2d (acot:line-pts (car lines))))
+  (setq tol (* 0.1 side-len)  all-pts nil)
   (foreach ent lines
     (setq all-pts (append (acot:line-pts ent) all-pts))
   )
@@ -523,7 +526,9 @@
 
 (defun c:ACOPIL (/ ss i n ent ed tp tx vals
                    tlst dlst tpt dlines result
-                   old-dimstyle old-clayer old-osm old-cmdecho cnt)
+                   old-dimstyle old-clayer old-osm old-cmdecho cnt
+                   avg-side side-cnt dim-scale
+                   old-dimtxt old-dimasz old-dimexe old-dimexo old-dimgap)
 
   (princ "\nACOPIL - Seleccione textos PHC/PHR y lineas del rombo: ")
   (setq ss (ssget))
@@ -606,6 +611,39 @@
       (acot:log (strcat "Resumen: " (itoa (length tlst)) " textos, "
                         (itoa (length dlst)) " lineas rombo"))
 
+      ;; Auto-detectar escala desde el tamano medio de las aristas
+      (setq dim-scale 1.0)
+      (if dlst
+        (progn
+          (setq avg-side 0.0  side-cnt 0)
+          (foreach ent dlst
+            (setq avg-side (+ avg-side (apply 'acot:dist2d (acot:line-pts ent))))
+            (setq side-cnt (1+ side-cnt))
+          )
+          (setq avg-side (/ avg-side (float side-cnt)))
+          (setq dim-scale (/ avg-side acot:*ref-side*))
+          (acot:log (strcat "Escala: avg-side=" (rtos avg-side 2 3)
+                            " dim-scale=" (rtos dim-scale 2 4)))
+          ;; Si escala es significativamente distinta de 1:1, ajustar DIMVARs
+          (if (< dim-scale 0.5)
+            (progn
+              (setq old-dimtxt (getvar "DIMTXT")
+                    old-dimasz (getvar "DIMASZ")
+                    old-dimexe (getvar "DIMEXE")
+                    old-dimexo (getvar "DIMEXO")
+                    old-dimgap (getvar "DIMGAP"))
+              (setvar "DIMTXT" (* old-dimtxt dim-scale))
+              (setvar "DIMASZ" (* old-dimasz dim-scale))
+              (setvar "DIMEXE" (* old-dimexe dim-scale))
+              (setvar "DIMEXO" (* old-dimexo dim-scale))
+              (setvar "DIMGAP" (* old-dimgap dim-scale))
+              (acot:log (strcat "  DIMVARs escalados: DIMTXT=" (rtos (* old-dimtxt dim-scale) 2 3)
+                                " DIMASZ=" (rtos (* old-dimasz dim-scale) 2 3)))
+            )
+          )
+        )
+      )
+
       (cond
         ((null tlst)
          (princ "\nNo se encontraron textos PHC/PHR."))
@@ -659,6 +697,17 @@
       (acot:log-close)
       (if acot:*logfile*
         (princ (strcat "\nLog guardado en: " acot:*logfile*))
+      )
+
+      ;; Restaurar DIMVARs si fueron escalados
+      (if old-dimtxt
+        (progn
+          (setvar "DIMTXT" old-dimtxt)
+          (setvar "DIMASZ" old-dimasz)
+          (setvar "DIMEXE" old-dimexe)
+          (setvar "DIMEXO" old-dimexo)
+          (setvar "DIMGAP" old-dimgap)
+        )
       )
 
       ;; Restaurar estado
