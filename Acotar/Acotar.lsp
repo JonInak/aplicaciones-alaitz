@@ -183,6 +183,33 @@
 
 ;;=================== DETECCION DEL ROMBO ===================;;
 
+;;; Descompone una LWPOLYLINE en entidades LINE temporales
+;;; Devuelve lista de enames de las LINE creadas
+(defun acot:lwpoly-to-lines (ent / ed pts pair closed n i p1 p2 new-ent lines lyr)
+  (setq ed (entget ent)  pts nil  lyr (cdr (assoc 8 ed)))
+  (foreach pair ed
+    (if (= (car pair) 10)
+      (setq pts (append pts (list (cdr pair))))
+    )
+  )
+  (setq closed (= (logand (if (assoc 70 ed) (cdr (assoc 70 ed)) 0) 1) 1))
+  (setq n (length pts)  lines nil  i 0)
+  (repeat (if closed n (1- n))
+    (setq p1 (nth i pts)
+          p2 (nth (rem (1+ i) n) pts))
+    (setq new-ent (entmakex (list
+      '(0 . "LINE")
+      (cons 8 lyr)
+      (cons 62 acot:*color*)
+      (cons 10 p1)
+      (cons 11 p2)
+    )))
+    (if new-ent (setq lines (cons new-ent lines)))
+    (setq i (1+ i))
+  )
+  lines
+)
+
 ;;; Comprueba si una LINE es arista del rombo (longitud + angulo diagonal)
 ;;; Rechaza horizontales (~0/180) y verticales (~90) que son separadores de celdas
 (defun acot:is-diamond-edge (ent / ed p1 p2 len ang)
@@ -539,7 +566,8 @@
                    tlst dlst tpt dlines result
                    old-dimstyle old-clayer old-osm old-cmdecho cnt
                    avg-side side-cnt dim-scale
-                   old-dimtxt old-dimasz old-dimexe old-dimexo old-dimgap)
+                   old-dimtxt old-dimasz old-dimexe old-dimexo old-dimgap
+                   poly-lines temp-lines pl)
 
   (princ "\nACOPIL - Seleccione textos PHC/PHR y lineas del rombo: ")
   (setq ss (ssget))
@@ -574,7 +602,7 @@
       (acot:log (strcat "Seleccion: " (itoa (sslength ss)) " entidades"))
 
       ;; Clasificar entidades
-      (setq tlst nil  dlst nil  n (sslength ss)  i 0)
+      (setq tlst nil  dlst nil  temp-lines nil  n (sslength ss)  i 0)
       (repeat n
         (setq ent (ssname ss i)
               ed  (entget ent)
@@ -614,6 +642,22 @@
                (list (car (cdr (assoc 11 ed))) (cadr (cdr (assoc 11 ed)))))
                pi) 180.0) 180.0) 2 1)
              " capa=" (cdr (assoc 8 ed)))))
+          ((and (= tp "LWPOLYLINE")
+                (= (strcase (cdr (assoc 8 ed))) (strcase acot:*src-layer*)))
+           (setq poly-lines (acot:lwpoly-to-lines ent))
+           (foreach pl poly-lines
+             (if (acot:is-diamond-edge pl)
+               (progn
+                 (setq dlst (cons pl dlst))
+                 (setq temp-lines (cons pl temp-lines))
+                 (acot:log (strcat "  LWPOLY->LINE ok: long="
+                   (rtos (apply 'acot:dist2d (acot:line-pts pl)) 2 1)
+                   " mid=("
+                   (rtos (car (apply 'acot:midpt (acot:line-pts pl))) 2 1) ","
+                   (rtos (cadr (apply 'acot:midpt (acot:line-pts pl))) 2 1) ")")))
+               (entdel pl)
+             )
+           ))
           (T
            (acot:log (strcat "  Ignorada: tipo=" tp)))
         )
@@ -716,6 +760,11 @@
          (acot:log (strcat "\nResultado: " (itoa cnt) " pilar(es) acotado(s)"))
          (princ (strcat "\n" (itoa cnt) " pilar(es) acotado(s)."))
         )
+      )
+
+      ;; Eliminar todas las lineas temporales (de LWPOLYLINE)
+      (foreach pl temp-lines
+        (if (entget pl) (entdel pl))
       )
 
       ;; Cerrar log
